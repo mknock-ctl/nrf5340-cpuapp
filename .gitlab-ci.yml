@@ -1,0 +1,44 @@
+variables:
+  APPDIR: $CI_PROJECT_DIR/ses_assignment
+  OUTDIR: $APPDIR/build/
+
+build:
+  stage: build
+  image: ghcr.io/nrfconnect/sdk-nrf-toolchain:v3.1.1
+  variables:
+    DEBIAN_FRONTEND: noninteractive # CI is a non-interactive shell
+    ACCEPT_JLINK_LICENSE: 0 # JLink isn't needed for building
+  script:
+    - cd $APPDIR
+    - west init --local
+    - west update
+    - west build --board mergebot/nrf5340/cpuapp/ns
+  cache:
+    key: west-cache
+    paths: [deps/]
+  artifacts:
+    when: on_success
+    expire_in: "1 week"
+    paths: [$OUTDIR]
+
+keep-tagged:
+  dependencies: [build]
+  image: ubuntu:latest
+  only: [ tags ]
+  script: [echo "storing artifacts forever"]
+  artifacts:
+    expire_in: "never"
+    paths: [$OUTDIR]
+
+check-format:
+  image: ubuntu:latest
+  variables:
+    CLANG_FMT: clang-format-18
+  stage: test
+  before_script:
+    - apt-get update
+    - apt-get install git $CLANG_FMT -y
+  script:
+    - $CLANG_FMT --version
+    - $CLANG_FMT --dry-run --Werror $(git ls-files '*.c') $(git ls-files '*.h')
+  allow_failure: true

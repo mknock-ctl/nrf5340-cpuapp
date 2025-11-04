@@ -1,0 +1,30 @@
+manifest:
+    version: 1.2
+
+    projects:
+        # Nordic's nRF Connect SDK
+        - name: nrf
+          url: https://github.com/nrfconnect/sdk-nrf
+          revision: v3.1.1
+          import:
+              file: west.yml
+              path-prefix: deps
+              name-allowlist:
+                  - cmsis_6
+                  - hal_nordic
+                  - nrfxlib
+                  - zephyr
+                  - mbedtls
+                  - oberon-psa-crypto
+                  - trusted-firmware-m
+
+          # CapBot's zephyr board definitions
+        - name: capbot-zephyr-boards
+          url: https://gitlab.kuleuven.be/distrinet/taskforces/nes/freebot/zephyr-boards
+          revision: v3.0
+          path: deps/capbot/boards
+        # CapBot's zephyr library
+        - name: capbot-zephyr-library
+          url: https://gitlab.kuleuven.be/distrinet/taskforces/nes/freebot/zephyr-mergebot-library
+          revision: v0.2
+          path: deps/capbot/lib

@@ -1,0 +1,15 @@
+# West workspace
+.west/
+
+# Dependencies
+deps/
+
+# Build outputs
+build*/
+
+# Editor specific
+.zed/
+.vscode/
+
+# Mac specific
+.DS_Store
