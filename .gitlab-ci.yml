@@ -4,7 +4,9 @@ variables:
 
 build:
   stage: build
-  image: ghcr.io/nrfconnect/sdk-nrf-toolchain:v3.1.1
+  image: 
+    name: ghcr.io/nrfconnect/sdk-nrf-toolchain:v3.1.1
+    entrypoint: [""]
   variables:
     DEBIAN_FRONTEND: noninteractive # CI is a non-interactive shell
     ACCEPT_JLINK_LICENSE: 0 # JLink isn't needed for building
