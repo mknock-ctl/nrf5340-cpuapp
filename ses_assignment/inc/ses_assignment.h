@@ -82,4 +82,7 @@ typedef enum {
  */
 void update_status(ses_status_code code);
 
+void imu_init(void);
+void imu_test(void);
+
 #endif // SES_ASSIGNMENT_H

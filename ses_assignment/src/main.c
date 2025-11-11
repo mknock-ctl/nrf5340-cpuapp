@@ -64,14 +64,20 @@ int main(void) {
     mb_out_bumper_off();
     mb_leds_off();
 
+    imu_init();
+
     // Main superloop
     for (;;) {
-        showcase();
+        mb_led_toggle(MB_LED_R);
+        mb_led_toggle(MB_LED_G);
+        mb_led_toggle(MB_LED_B);
+        //showcase();
 
         // Functions to implement
         move(200);
         turn(90);
         turn_to_north();
+        imu_test();
         wait_for_double_tap();
         update_status(SES_CRASH);
     }
