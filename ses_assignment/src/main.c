@@ -68,10 +68,11 @@ int main(void) {
 
     // Main superloop
     for (;;) {
-        mb_led_toggle(MB_LED_R);
-        mb_led_toggle(MB_LED_G);
-        mb_led_toggle(MB_LED_B);
         //showcase();
+
+        int vcap = mb_measure_vcap();
+        int vin = mb_measure_vin();
+        LOG_INF("Vcap: %4dmV, Vin: %4dmV", vcap, vin);
 
         // Functions to implement
         move(200);

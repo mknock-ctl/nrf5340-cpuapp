@@ -15,11 +15,9 @@
 #include <zephyr/devicetree.h>
 #include "ses_assignment.h"
 #include <mergebot.h>
+#include "i2c.h"
 
 LOG_MODULE_REGISTER(ses_assignment, LOG_LEVEL_DBG);
-
-#define I2C1_NODE DT_NODELABEL(lsm6dsox)
-static const struct i2c_dt_spec dev_i2c = I2C_DT_SPEC_GET(I2C1_NODE);
 
 static const struct gpio_dt_spec int1_gpio = {
     .port = DEVICE_DT_GET(DT_NODELABEL(gpio0)),
@@ -51,36 +49,24 @@ static void tap_work_handler(struct k_work *work);
 #define VCAP_MAX 3000
 #define VCAP_MIN 600
 
-static int lsm6dsox_write_reg(uint8_t reg, uint8_t value) // over i2c
-{
-    uint8_t buf[2] = { reg, value };
-    return i2c_write_dt(&dev_i2c, buf, sizeof(buf));
-}
-
-static int lsm6dsox_read_reg(uint8_t reg, uint8_t *value) // over i2c
-{
-    return i2c_write_read_dt(&dev_i2c, &reg, 1, value, 1);
-}
-
 static void tap_work_handler(struct k_work *work)
 {
     uint8_t all_int_src = 0;
     uint8_t tap_src = 0;
+
     int ret;
 
-    if (!device_is_ready(dev_i2c.bus)) {
-        LOG_ERR("i2c bus = work handlmer not ready");
-        return;
-    }
+    if(check_i2c_bus()) return;
 
-    ret = lsm6dsox_read_reg(LSM6DSOX_ALL_INT_SRC, &all_int_src); if (ret) return ret;
-    ret = lsm6dsox_read_reg(LSM6DSOX_TAP_SRC, &tap_src); if (ret) return ret;
+    ret = lsm6dsox_read_reg(LSM6DSOX_ALL_INT_SRC, &all_int_src); if (ret) return;
+    ret = lsm6dsox_read_reg(LSM6DSOX_TAP_SRC, &tap_src); if (ret) return;
+    LOG_DBG("all_int_src: 0x%02X, tap_src: 0x%02X", all_int_src, tap_src);
 
-    // idk moet nog wat verbeterd worden
-    if ((all_int_src & 0x20) || (tap_src & 0x20)) {
+    if ((tap_src & 0x20)) {
         LOG_INF("Double-tap detected");
         k_sem_give(&double_tap_sem);
-    }
+    } else if (tap_src & 0x10)
+    LOG_INF("Single-tap detected");
 }
 
 // isr
@@ -94,10 +80,7 @@ static int configure_double_tap(void)
     int ret;
     uint8_t readback = 0;
 
-    if (!device_is_ready(dev_i2c.bus)) {
-        LOG_ERR("i2c bus not ready");
-        return -ENODEV;
-    }
+    if (check_i2c_bus()) return -ENODEV;
 
     ret = lsm6dsox_write_reg(LSM6DSOX_CTRL1_XL, 0x60); if (ret) return ret;
     lsm6dsox_read_reg(LSM6DSOX_CTRL1_XL, &readback);
@@ -108,6 +91,8 @@ static int configure_double_tap(void)
     lsm6dsox_read_reg(LSM6DSOX_TAP_CFG0, &readback);
     LOG_DBG("TAP_CFG0: 0x%02X", readback);
     ret = lsm6dsox_write_reg(LSM6DSOX_TAP_CFG1, 0x00); if (ret) return ret;
+    lsm6dsox_read_reg(LSM6DSOX_TAP_CFG1, &readback);
+    LOG_DBG("TAP_CFG1: 0x%02X", readback);
     ret = lsm6dsox_write_reg(LSM6DSOX_TAP_CFG2, 0x80); if (ret) return ret;
     lsm6dsox_read_reg(LSM6DSOX_TAP_CFG2, &readback);
     LOG_DBG("TAP_CFG2: 0x%02X", readback);
@@ -186,28 +171,20 @@ void update_status(ses_status_code code) {  }
 
 void imu_init(void)
 {
-    if (!device_is_ready(dev_i2c.bus)) {
-        LOG_ERR("I2C bus %s not ready", dev_i2c.bus ? dev_i2c.bus->name : "unknown");
-        return;
-    }
+    if (check_i2c_bus()) return;
     k_work_init(&tap_work, tap_work_handler);
 }
 
 void imu_test(void)
 {
-    uint8_t who_am_i_reg = LSM6DSOX_WHO_AM_I;
-    uint8_t who_am_i_value = 0;
+    uint8_t readback;
     int ret;
 
-    ret = i2c_write_read_dt(&dev_i2c, &who_am_i_reg, 1, &who_am_i_value, 1);
-    if (ret) {
-        LOG_ERR("whoami read failed: %d", ret);
-        return;
-    }
+    ret = lsm6dsox_read_reg(LSM6DSOX_WHO_AM_I, &readback); if (ret) return;
 
-    if (who_am_i_value != 0x6C) {
-        LOG_ERR("whoami mismatch: expected 0x6C, got 0x%02X", who_am_i_value);
+    if (readback != 0x6C) {
+        LOG_ERR("whoami mismatch: expected 0x6C, got 0x%02X", readback);
     } else {
-        LOG_INF("whoami: 0x%02X", who_am_i_value);
+        LOG_INF("whoami: 0x%02X", readback);
     }
 }
