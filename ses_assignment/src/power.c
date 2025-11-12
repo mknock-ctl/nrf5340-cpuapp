@@ -1,6 +1,6 @@
 #include "power.h"
-#include <mergebot.h>
 #include <stdbool.h>
+#include <mergebot.h>
 
 #define VCAP_MAX 3000
 #define VCAP_MIN 600
