@@ -49,15 +49,62 @@ static int lsm6dsox_configure_tap(void)
         uint8_t reg;
         uint8_t val;
     } config[] = {
+        // CONTROL
+        // 0x60 = 0b0110_0000
+        // ODR_XL = 0110 (416 Hz), FS_XL = 00 (±2g), LPF2_EN=0
         {LSM6DSOX_CTRL1_XL,    0x60},
+
+        // 0x44 = 0b0100_0100
+        // BDU = 1 (Block Data Update)
+        // IF_INC = 1 (auto-increment addresses)
         {LSM6DSOX_CTRL3_C,     0x44},
+
+        // 0x00 = 0b0000_0000
+        // All default: I2C enable, no mirror, no special mode
         {LSM6DSOX_CTRL4_C,     0x00},
-        {LSM6DSOX_TAP_CFG0,    0x8E},
-        {LSM6DSOX_TAP_CFG1,    0x00},
+
+        // 0x4F = 0b0100_1111
+        // bit7 = 0 (reserved)
+        // bit6 = 1 → INT_CLR_ON_READ
+        // bit5 = 0
+        // bit4 = 0
+        // bit3 = 1 → TAP_X_EN
+        // bit2 = 1 → TAP_Y_EN
+        // bit1 = 1 → TAP_Z_EN
+        // bit0 = 1 → LIR (latched interrupt)
+        {LSM6DSOX_TAP_CFG0,    0x4F},
+
+        // 0x0C = 0b0000_1100
+        // bits[7:5] = 000 (TAP_PRIORITY default)
+        // bits[4:0] = 01100 → TAP_THS_X = 12 (≈0.96 g for ±2g FS)
+        {LSM6DSOX_TAP_CFG1,    0x0C},
+
+        // 0x80 = 0b1000_0000
+        // bit7 = 1 → INTERRUPTS_ENABLE
+        // bits[6:5] = 00 (inactivity disabled)
+        // bits[4:0] = 00000 → TAP_THS_Y = 0 (use Z only or adjust)
         {LSM6DSOX_TAP_CFG2,    0x80},
+
+        // 0x8C = 0b1000_1100
+        // bit7 = 1 → 4D/6D enabled
+        // bits[6:5] = 00 (SIXD_THS default)
+        // bits[4:0] = 01100 → TAP_THS_Z = 12 (≈0.96 g)
         {LSM6DSOX_TAP_THS_6D,  0x8C},
+
+        // 0x7F = 0b0111_1111
+        // bits[7:4] = 0111 → DUR = 7
+        // bits[3:2] = 11 → QUIET = 3
+        // bits[1:0] = 11 → SHOCK = 3
         {LSM6DSOX_INT_DUR2,    0x7F},
+
+        // 0x00 = 0b0000_0000
+        // Wakeup detection disabled
         {LSM6DSOX_WAKE_UP_THS, 0x00},
+
+        // 0x48 = 0b0100_1000
+        // bit6 = 1 → INT1_SINGLE_TAP
+        // bit3 = 1 → INT1_DOUBLE_TAP
+        // Others = 0
         {LSM6DSOX_MD1_CFG,     0x48},
     };
 
