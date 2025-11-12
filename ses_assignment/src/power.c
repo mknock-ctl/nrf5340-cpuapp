@@ -1,6 +1,6 @@
-#include <stdbool.h>
-#include <mergebot.h>
 #include "power.h"
+#include <mergebot.h>
+#include <stdbool.h>
 
 #define VCAP_MAX 3000
 #define VCAP_MIN 600
@@ -9,8 +9,7 @@
 
 static power_level_t last_level = POWER_HIGH + 1;
 
-static int vcap_to_percent(int vcap)
-{
+static int vcap_to_percent(int vcap) {
     if (vcap >= VCAP_MAX) {
         return 100;
     }
@@ -20,8 +19,7 @@ static int vcap_to_percent(int vcap)
     return (100 * (vcap - VCAP_MIN)) / (VCAP_MAX - VCAP_MIN);
 }
 
-static power_level_t percent_to_level(int percent)
-{
+static power_level_t percent_to_level(int percent) {
     if (percent > THRESHOLD_HIGH) {
         return POWER_HIGH;
     }
@@ -31,15 +29,13 @@ static power_level_t percent_to_level(int percent)
     return POWER_LOW;
 }
 
-power_level_t power_get_level(void)
-{
+power_level_t power_get_level(void) {
     int vcap = mb_measure_vcap();
     int percent = vcap_to_percent(vcap);
     return percent_to_level(percent);
 }
 
-void power_update_indicator(void)
-{
+void power_update_indicator(void) {
     power_level_t level = power_get_level();
 
     if (level == last_level) {

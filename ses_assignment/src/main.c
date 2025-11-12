@@ -4,9 +4,9 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+#include "power.h"
 #include "robot.h"
 #include "tap_detect.h"
-#include "power.h"
 #include <mergebot.h>
 
 #define SPEED 100 // MAX 300
@@ -58,8 +58,7 @@ void showcase(void) {
     k_sleep(K_MSEC(DELAY));
 }
 
-static void wait_for_double_tap(void)
-{
+static void wait_for_double_tap(void) {
     LOG_INF("waiting for double tap");
 
     while (!tap_detect_wait(K_MSEC(TAP_TIMEOUT_MS))) {
@@ -83,7 +82,7 @@ int main(void) {
 
     // Main superloop
     for (;;) {
-        //showcase();
+        // showcase();
 
         int vcap = mb_measure_vcap();
         int vin = mb_measure_vin();
