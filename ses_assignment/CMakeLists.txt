@@ -4,4 +4,4 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(assignment_ses)
 
 target_include_directories(app PRIVATE inc)
-target_sources(app PRIVATE src/main.c src/ses_assignment.c)
+target_sources(app PRIVATE src/main.c src/robot.c src/tap_detect.c src/lsm6dsox.c src/power.c)

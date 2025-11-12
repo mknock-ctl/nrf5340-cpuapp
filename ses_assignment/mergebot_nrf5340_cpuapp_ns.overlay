@@ -11,6 +11,7 @@
 // For more help, browse the DeviceTree documentation at https://docs.zephyrproject.org/latest/guides/dts/index.html
 // You can also visit the nRF DeviceTree extension documentation at https://docs.nordicsemi.com/bundle/nrf-connect-vscode/page/guides/ncs_configure_app.html#devicetree-support-in-the-extension
 
+
 &i2c1 {
     status = "okay";
     pinctrl-0 = <&i2c1_default>;
@@ -32,5 +33,18 @@
                     <NRF_PSEL(TWIM_SCL, 1, 11)>;
             bias-pull-up;
         };
+    };
+};
+
+
+/ {
+    aliases {
+        int1 = &int1_gpio;
+    };
+    
+    int1_gpio: int1-gpio {
+        compatible = "gpio-leds";
+        gpios = <&gpio0 12 GPIO_ACTIVE_HIGH>;
+        label = "IMU INT1";
     };
 };

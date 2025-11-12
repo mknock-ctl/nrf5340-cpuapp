@@ -4,13 +4,16 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
-#include "ses_assignment.h"
+#include "robot.h"
+#include "tap_detect.h"
+#include "power.h"
 #include <mergebot.h>
 
 #define SPEED 100 // MAX 300
 #define DELAY 500
+#define TAP_TIMEOUT_MS 100
 
-LOG_MODULE_REGISTER(robot, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
 /**
  * @brief Initialize the robot's hardware components
@@ -55,6 +58,18 @@ void showcase(void) {
     k_sleep(K_MSEC(DELAY));
 }
 
+static void wait_for_double_tap(void)
+{
+    LOG_INF("waiting for double tap");
+
+    while (!tap_detect_wait(K_MSEC(TAP_TIMEOUT_MS))) {
+        power_update_indicator();
+    }
+
+    mb_leds_off();
+    LOG_INF("double tap detected");
+}
+
 int main(void) {
     // Initialize robot
     __ASSERT(init() == MB_SUCCESS, "Failed to initialize robot");
@@ -64,22 +79,22 @@ int main(void) {
     mb_out_bumper_off();
     mb_leds_off();
 
-    imu_init();
+    tap_detect_init();
 
     // Main superloop
     for (;;) {
-        mb_led_toggle(MB_LED_R);
-        mb_led_toggle(MB_LED_G);
-        mb_led_toggle(MB_LED_B);
         //showcase();
 
+        int vcap = mb_measure_vcap();
+        int vin = mb_measure_vin();
+        LOG_INF("Vcap: %4dmV, Vin: %4dmV", vcap, vin);
+
         // Functions to implement
-        move(200);
-        turn(90);
-        turn_to_north();
-        imu_test();
+        robot_move(200);
+        robot_turn(90);
+        robot_turn_to_north();
         wait_for_double_tap();
-        update_status(SES_CRASH);
+        robot_set_status(STATUS_CRASH);
     }
 
     // Unreachable
