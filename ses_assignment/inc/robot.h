@@ -39,14 +39,14 @@
  *
  * @param distance Target distance in millimeter, negative distances indicate moving backwards.
  */
-void move(int32_t distance);
+void robot_move(int32_t distance_mm);
 
 /**
  * @brief Turn the robot a certain angle, stop afterwards
  *
  * @param angle Target angle in degrees, negative angles indicate clockwise.
  */
-void turn(int32_t angle);
+void robot_turn(int32_t angle);
 
 /**
  * @brief Make the robot face North
@@ -57,32 +57,31 @@ void turn(int32_t angle);
  *
  * @note This function should finish within 30 seconds.
  */
-void turn_to_north(void);
+void robot_turn_to_north(void);
 
 /**
  * @brief Block execution of the current thread until a double tap is detected.
  */
-void wait_for_double_tap(void);
+//void wait_for_double_tap(void);
 
 /**
  * @brief Possible codes for the status LED
  * @note Just a suggestion, can be modified if needed
  */
 typedef enum {
-    SES_OK,      //!< Everything running ok
-    SES_TO_FAST, //!< Downhill loss of traction
-    SES_TO_SLOW, //!< Uphill loss of traction
-    SES_CRASH,   //<! Crashed into something
-} ses_status_code;
+    STATUS_OK,      //!< Everything running ok
+    STATUS_FAST, //!< Downhill loss of traction
+    STATUS_SLOW, //!< Uphill loss of traction
+    STATUS_CRASH,   //<! Crashed into something
+} robot_status_t;
+
+typedef struct k_work tap_work;
 
 /**
  * @brief Update the status LED
  *
  * @param code New status code
  */
-void update_status(ses_status_code code);
-
-void imu_init(void);
-void imu_test(void);
+void robot_set_status(robot_status_t code);
 
 #endif // SES_ASSIGNMENT_H
