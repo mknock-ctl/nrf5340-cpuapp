@@ -8,6 +8,7 @@
 #define LSM6DSOX_WHO_AM_I_VALUE 0x6C
 
 #define LSM6DSOX_CTRL1_XL       0x10
+#define LSM6DSOX_CTRL2_G        0x11
 #define LSM6DSOX_CTRL3_C        0x12
 #define LSM6DSOX_CTRL4_C        0x13
 #define LSM6DSOX_TAP_CFG0       0x56
@@ -27,6 +28,11 @@
 #define LSM6DSOX_OUTY_H_G       0x25
 #define LSM6DSOX_OUTZ_L_G       0x26
 #define LSM6DSOX_OUTZ_H_G       0x27
+
+// gyro values
+#define GYRO_CFG_500DPS_416HZ   0x64  // 0b0110_0100
+#define GYRO_CFG_250DPS_416HZ   0x60  // 0b0110_0000 (if you want more precision)
+#define GYRO_CFG_1000DPS_416HZ  0x68  // 0b0110_1000 (if turns are very fast)
 
 #define TAP_SRC_DOUBLE_TAP      (1 << 5)
 #define TAP_SRC_SINGLE_TAP      (1 << 4)

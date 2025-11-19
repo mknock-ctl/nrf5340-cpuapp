@@ -24,12 +24,14 @@ int init_hardware(void)
 {
     LOG_INF("Initializing hardware...");
 
-    INIT_CHECK(mb_measure_init(0));
-    INIT_CHECK(mb_drive_init(4));
-    INIT_CHECK(mb_power_init());
-    INIT_CHECK(mb_led_init());
-    INIT_CHECK(tap_detect_init());
-    INIT_CHECK(lis3mdl_init());
+    TRY_ERR(mb_error_t, mb_measure_init(0));
+    TRY_ERR(mb_error_t, mb_drive_init(4));
+    TRY_ERR(mb_error_t, mb_power_init());
+    TRY_ERR(mb_error_t, mb_led_init());
+
+    TRY_ERR(int, lis3mdl_init());
+    TRY_ERR(int, lsm6dsox_init());
+    TRY_ERR(int, tap_detect_init());
 
     LOG_INF("Hardware ready");
     return 0;
@@ -50,22 +52,21 @@ float calibrate_turn_rate(int16_t speed, uint32_t duration_ms) {
     
     // Sample gyroscope while turning
     while ((k_uptime_get() - start_time) < duration_ms) {
-        int ret = lsm6dsox_read_gyro(&gyro);
-        if (ret == 0) {
-            int64_t current_time = k_uptime_get();
-            float dt = (current_time - last_sample_time) / 1000.0f;  // to sec
-            
-            float gyro_z_dps = lsm6dsox_gyro_to_dps(gyro.z);
-            
-            total_rotation += gyro_z_dps * dt;
-            
-            sample_count++;
-            last_sample_time = current_time;
-            
-            if (sample_count % 10 == 0) {
-                LOG_DBG("Gyro Z: %d raw, %.2f dps, total: %.2f deg", 
-                        gyro.z, (double)gyro_z_dps, (double)total_rotation);
-            }
+        TRY_ERR(int, lsm6dsox_read_gyro(&gyro));
+
+        int64_t current_time = k_uptime_get();
+        float dt = (current_time - last_sample_time) / 1000.0f;  // to sec        
+
+        float gyro_z_dps = lsm6dsox_gyro_to_dps(gyro.z);
+        
+        total_rotation += gyro_z_dps * dt;
+        
+        sample_count++;
+        last_sample_time = current_time;
+        
+        if (sample_count % 10 == 0) {
+            LOG_DBG("Gyro X: %d raw, Gyro Y: %d raw, Gyro Z: %d raw, %.2f dps, total: %.2f deg", 
+                    gyro.x, gyro.y, gyro.z, (double)gyro_z_dps, (double)total_rotation);
         }
         k_sleep(K_MSEC(10));  // 100Hz
     }
@@ -183,7 +184,7 @@ int main(void) {
         //robot_turn(TURNSPEED);
         int32_t turn_time_ms = (int32_t)(fabsf((360.0f) * ms_per_degree));
         
-        mb_drive(TURNSPEED, -TURNSPEED);    
+        TRY_ERR(mb_error_t, mb_drive(TURNSPEED, -TURNSPEED));  
         k_sleep(K_MSEC(turn_time_ms));        
         mb_drive(0, 0);
     }

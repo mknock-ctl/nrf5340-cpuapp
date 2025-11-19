@@ -17,8 +17,10 @@
 #define TRY_ERR(err_t, test)                                                                       \
     do {                                                                                           \
         err_t err = (test);                                                                        \
-        if (err)                                                                                   \
+        if (err)  {                                                                                \
+            LOG_ERR("%s failed: %d", #test, err);                                                  \
             return err;                                                                            \
+        }                                                                                          \
     } while (0)
 
 #define INIT_CHECK(func)                                        \

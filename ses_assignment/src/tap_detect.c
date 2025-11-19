@@ -64,11 +64,6 @@ int tap_detect_init(void) {
         return ret;
     }
 
-    ret = lsm6dsox_init();
-    if (ret) {
-        return ret;
-    }
-
     return 0;
 }
 

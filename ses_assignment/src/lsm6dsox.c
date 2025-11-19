@@ -109,12 +109,25 @@ static int lsm6dsox_configure_tap(void) {
     };
 
     for (size_t i = 0; i < ARRAY_SIZE(config); i++) {
-        int ret = lsm6dsox_write_reg(config[i].reg, config[i].val);
-        if (ret) {
-            return ret;
-        }
+        TRY_ERR(int, lsm6dsox_write_reg(config[i].reg, config[i].val));
     }
 
+    return 0;
+}
+
+int lsm6dsox_configure_gyro(void) {
+    struct {
+        uint8_t reg;
+        uint8_t val;
+    } config[] = {
+        {LSM6DSOX_CTRL2_G, GYRO_CFG_500DPS_416HZ},
+    };
+
+    for (size_t i = 0; i < ARRAY_SIZE(config); i++) {
+        TRY_ERR(int, lsm6dsox_write_reg(config[i].reg, config[i].val));
+    }
+
+    LOG_INF("Gyroscope configured");
     return 0;
 }
 
@@ -150,14 +163,9 @@ int lsm6dsox_init(void) {
         return -ENODEV;
     }
 
-    int ret = lsm6dsox_verify_device();
-    if (ret) {
-        return ret;
-    }
-    ret = lsm6dsox_configure_tap();
-    if (ret) {
-        return ret;
-    }
+    TRY_ERR(int, lsm6dsox_verify_device());
+    TRY_ERR(int, lsm6dsox_configure_tap());
+    TRY_ERR(int, lsm6dsox_configure_gyro());
 
     LOG_INF("tap detection configured");
     return 0;
