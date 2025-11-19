@@ -1,6 +1,7 @@
 #include "lsm6dsox.h"
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/i2c.h>
+#include "ses_assignment.h"
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
@@ -116,6 +117,33 @@ static int lsm6dsox_configure_tap(void) {
 
     return 0;
 }
+
+
+int lsm6dsox_read_gyro(lsm6dsox_gyro_data_t *data) {
+    if (!device_is_ready(dev.bus)) {
+        return -ENODEV;
+    }
+    
+    uint8_t buf[6];
+    uint8_t reg = LSM6DSOX_OUTX_L_G;
+    
+    TRY_ERR(int, i2c_write_read_dt(&dev, &reg, 1, buf, 6));
+    
+    data->x = (int16_t)(buf[1] << 8 | buf[0]);
+    data->y = (int16_t)(buf[3] << 8 | buf[2]);
+    data->z = (int16_t)(buf[5] << 8 | buf[4]);
+    
+    return 0;
+}
+
+float lsm6dsox_gyro_to_dps(int16_t raw_value) {
+    // For ±500 dps range: sensitivity = 17.50 mdps/LSB
+    // For ±250 dps range: sensitivity = 8.75 mdps/LSB
+    // For ±1000 dps range: sensitivity = 35.0 mdps/LSB
+    const float sensitivity = 17.50f;  // mdps/LSB for ±500 dps
+    return (float)raw_value * sensitivity / 1000.0f;  // Convert to dps
+}
+
 
 int lsm6dsox_init(void) {
     if (!device_is_ready(dev.bus)) {

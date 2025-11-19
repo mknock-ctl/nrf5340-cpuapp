@@ -21,12 +21,28 @@
 #define LSM6DSOX_ALL_INT_SRC    0x1D
 #define LSM6DSOX_TAP_SRC        0x1C
 
+#define LSM6DSOX_OUTX_L_G       0x22
+#define LSM6DSOX_OUTX_H_G       0x23
+#define LSM6DSOX_OUTY_L_G       0x24
+#define LSM6DSOX_OUTY_H_G       0x25
+#define LSM6DSOX_OUTZ_L_G       0x26
+#define LSM6DSOX_OUTZ_H_G       0x27
+
 #define TAP_SRC_DOUBLE_TAP      (1 << 5)
 #define TAP_SRC_SINGLE_TAP      (1 << 4)
+
+typedef struct {
+    int16_t x;
+    int16_t y;
+    int16_t z;
+} lsm6dsox_gyro_data_t;
 
 int lsm6dsox_init(void);
 int lsm6dsox_verify_device(void);
 int lsm6dsox_write_reg(uint8_t reg, uint8_t value);
 int lsm6dsox_read_reg(uint8_t reg, uint8_t *value);
+
+float lsm6dsox_gyro_to_dps(int16_t raw_value);
+int lsm6dsox_read_gyro(lsm6dsox_gyro_data_t *data);
 
 #endif
