@@ -22,6 +22,12 @@
         reg = <0x6a>;
         label = "IMU";
     };
+
+    lis3mdl: lis3mdl@1c {
+        compatible = "st,lis3mdl";
+        reg = <0x1c>;
+        label = "IMU_MAG";
+    };
     
     clock-frequency = <I2C_BITRATE_STANDARD>;
 };
@@ -40,6 +46,7 @@
 / {
     aliases {
         int1 = &int1_gpio;
+        lis3mdl = &lis3mdl;
     };
     
     int1_gpio: int1-gpio {

@@ -1,38 +1,29 @@
-/**
- * @file ses_assignment.h
- * @brief Common macros & definitions for this SES assignment
- * @date 2025-10-01
- */
-
-#ifndef SES_ASSIGNMENT_H
-#define SES_ASSIGNMENT_H
+#ifndef ROBOT_H
+#define ROBOT_H
 
 #include <stdint.h>
 
-/// @brief Try executing `test`, if it returns a non-zero value, log the error and return from the
-/// current function
-#define TRY(test)                                                                                  \
-    do {                                                                                           \
-        if ((test)) {                                                                              \
-            LOG_ERR("%s failed at %s:%d", #test, __FILE__, __LINE__);                              \
-            return;                                                                                \
-        }                                                                                          \
-    } while (0)
+#define SPEED 100 // MAX 300
+#define TURNSPEED 100
+#define MS_PER_DEGREE 8
 
-/// @brief Try executing `test`, if it returns a non-zero value, return that value from the current
-/// function
-#define TRY_ERR(err_t, test)                                                                       \
-    do {                                                                                           \
-        err_t err = (test);                                                                        \
-        if (err)                                                                                   \
-            return err;                                                                            \
-    } while (0)
+// calibration
+#define MAG_OFFSET_X        0      
+#define MAG_OFFSET_Y        0      
+#define HEADING_OFFSET_DEG  0.0f  
 
-/// @brief Mark a code location as unreachable, triggering a fatal error if reached
-#define UNREACHABLE()                                                                              \
-    do {                                                                                           \
-        __ASSERT(false, "Reached unreachable code at %s:%d", __FILE__, __LINE__);                  \
-    } while (0)
+// Navigation parameters 
+#define HEADING_TOLERANCE   5.0f  
+#define TURN_TIMEOUT_MS     30000  // Maximum time for turn_to_north 
+#define MAX_TURN_ATTEMPTS   2     // Safety limit on corrections 
+
+#define ROBOT_HEADING_NORTH     0.0f
+#define ROBOT_HEADING_TOLERANCE 5.0f
+#define ROBOT_TURN_TIMEOUT_MS   30000
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 /**
  * @brief Move the robot a certain distance, stop afterwards
@@ -84,4 +75,4 @@ typedef struct k_work tap_work;
  */
 void robot_set_status(robot_status_t code);
 
-#endif // SES_ASSIGNMENT_H
+#endif
