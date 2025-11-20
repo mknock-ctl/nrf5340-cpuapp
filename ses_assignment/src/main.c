@@ -29,10 +29,6 @@ int init_hardware(void)
     TRY_ERR(mb_error_t, mb_power_init());
     TRY_ERR(mb_error_t, mb_led_init());
 
-    TRY_ERR(int, lis3mdl_init());
-    TRY_ERR(int, lsm6dsox_init());
-    TRY_ERR(int, tap_detect_init());
-
     LOG_INF("Hardware ready");
     return 0;
 }
@@ -169,6 +165,9 @@ int main(void) {
 
     mb_out_bumper_off();
     mb_leds_off();
+
+    TRY_ERR(int, tap_detect_init());
+    TRY_ERR(int, lis3mdl_init());
 
     LOG_INF("Robot initialization succeeded");
 
