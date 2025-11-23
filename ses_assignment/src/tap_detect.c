@@ -36,16 +36,11 @@ static void set_interrupts_active(bool active) {
 static void tap_work_handler(struct k_work *work) {
     uint8_t tap_src = 0;
 
-    int ret = lsm6dsox_read_reg(LSM6DSOX_TAP_SRC, &tap_src);
-    
-    if (ret != 0) {
-        LOG_ERR("Failed to read TAP_SRC");
-        set_interrupts_active(true);
-        return;
-    }
+    TRY_ERR(int, lsm6dsox_read_reg(LSM6DSOX_TAP_SRC, &tap_src));
+    LOG_DBG("TAP_SRC=0x%02X", tap_src);
 
     if (ignore_taps) {
-        set_interrupts_active(true);
+        LOG_DBG("Tap ignored (ignore_taps=true)");
         return;
     }
 
@@ -61,20 +56,12 @@ static void tap_work_handler(struct k_work *work) {
     } else {
         LOG_DBG("Ghost Interrupt (TAP_SRC=0x%02X)", tap_src);
     }
-    
-    set_interrupts_active(true);
 }
 
 static void int1_isr(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    // Disable interrupts immediately to prevent ISR flooding while worker runs
-    LOG_DBG("int1_isr");
-    gpio_pin_interrupt_configure_dt(&int1_gpio, GPIO_INT_DISABLE);
+    LOG_DBG("INT1 interrupt triggered");
     
-    if (!ignore_taps) {
-        k_work_submit(&tap_work);
-    } else {
-        gpio_pin_interrupt_configure_dt(&int1_gpio, GPIO_INT_EDGE_RISING);
-    }
+    k_work_submit(&tap_work);
 }
 
 static int gpio_init(void) {
@@ -87,7 +74,9 @@ static int gpio_init(void) {
     gpio_init_callback(&int1_cb_data, int1_isr, BIT(int1_gpio.pin));
     gpio_add_callback(int1_gpio.port, &int1_cb_data);
 
-    set_interrupts_active(true);
+    TRY_ERR(int, gpio_pin_interrupt_configure_dt(&int1_gpio, GPIO_INT_EDGE_RISING));
+
+    LOG_INF("GPIO INT1 configured on pin %d", int1_gpio.pin);
 
     return 0;
 }
@@ -104,4 +93,32 @@ int tap_detect_init(void) {
 
 bool tap_detect_wait(k_timeout_t timeout) { 
     return k_sem_take(&tap_sem, timeout) == 0; 
+}
+
+void tap_detect_poll_test(void) {
+    LOG_INF("=== Starting tap polling test (10 seconds) ===");
+    
+    int64_t start = k_uptime_get();
+    int tap_count = 0;
+    
+    while ((k_uptime_get() - start) < 10000) {
+        uint8_t tap_src = 0;
+        lsm6dsox_read_reg(LSM6DSOX_TAP_SRC, &tap_src);
+        
+        if (tap_src != 0) {
+            bool is_double = (tap_src & (1 << 4)) != 0;
+            bool is_single = (tap_src & (1 << 5)) != 0;
+            
+            LOG_INF("[%lld ms] TAP_SRC=0x%02X: %s%s", 
+                    k_uptime_get() - start,
+                    tap_src,
+                    is_double ? "DOUBLE " : "",
+                    is_single ? "SINGLE " : "");
+            tap_count++;
+        }
+        
+        k_sleep(K_MSEC(10));
+    }
+    
+    LOG_INF("=== Polling test complete: %d taps detected ===", tap_count);
 }

@@ -55,6 +55,9 @@
 #define TAP_SRC_DOUBLE_TAP      (1 << 4)
 #define TAP_SRC_SINGLE_TAP      (1 << 5)
 
+// WAKE_UP_THS
+#define WAKE_UP_THS_SINGLE_DOUBLE_TAP (1 << 7)
+
  // gyro values
 
 #define GYRO_CFG_500DPS_416HZ 0x64 // 0b0110_0100
@@ -73,5 +76,7 @@ int lsm6dsox_verify_device(void);
 int lsm6dsox_read_reg(uint8_t reg, uint8_t *value);
 float lsm6dsox_gyro_to_dps(int16_t raw_value);
 int lsm6dsox_read_gyro(lsm6dsox_gyro_data_t *data);
+
+void lsm6dsox_debug_tap_config(void);
 
 #endif

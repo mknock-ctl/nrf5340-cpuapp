@@ -16,5 +16,6 @@ typedef enum {
 int tap_detect_init(void);
 bool tap_detect_wait(k_timeout_t timeout);
 void tap_detect_ignore(bool ignore);
+void tap_detect_poll_test(void);
 
 #endif

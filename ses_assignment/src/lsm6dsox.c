@@ -41,38 +41,104 @@ int lsm6dsox_verify_device(void) {
 }
 
 static int lsm6dsox_configure_tap(void) {
+    LOG_INF("Configuring tap detection...");
+    
     CONFIGURE_REGS(lsm6dsox_write_reg,
-        // 1. Setup ODR and Range
+        // Setup ODR and Range
         {LSM6DSOX_CTRL1_XL, ODR_XL_416Hz | FS_XL_2g},
-
-        // 2. Enable Block Data Update
+        
+        // Enable Block Data Update
         {LSM6DSOX_CTRL3_C, 0x44}, // BDU | IF_INC
-
-        // 3. Tap Configuration (Z-axis enabled, Latch Interrupt Request ON)
-        // TAP_LIR is critical: It keeps INT1 high until we read TAP_SRC
-        {LSM6DSOX_TAP_CFG0, TAP_Z_EN | TAP_X_EN | TAP_Y_EN | TAP_LIR},
-
-        // 4. X Threshold (Increased slightly to 0x09 to reduce noise triggers)
+        
+        // Enable INT1 output (some LSM6DSOX require this)
+        {LSM6DSOX_CTRL4_C, 0x00},
+        
+        // Tap Configuration - ONLY Z-axis for cleaner detection
+        // TAP_LIR keeps INT1 high until we read TAP_SRC
+        {LSM6DSOX_TAP_CFG0, TAP_Z_EN | TAP_LIR},
+        
+        // X Threshold (not used since X is disabled, but set anyway)
         {LSM6DSOX_TAP_CFG1, TAP_THRESHOLD_X(0x08)}, 
-
-        // 5. Enable Interrupts in hardware engine
+        
+        // Enable Interrupts in hardware engine
         {LSM6DSOX_TAP_CFG2, TAP_INTERRUPTS_ENABLE},
-
-        // 6. Z Threshold (0x09 is approx 500mg on 2g scale - standard for finger taps)
+        
+        // Z Threshold - Balanced sensitivity
         {LSM6DSOX_TAP_THS_6D, TAP_THRESHOLD_Z(0x08)}, 
 
-        // Duration: 0x06 (Wait ~300ms for second tap)
-        // Quiet:    0x02 (Wait ~20ms after tap before listening again. Short is better)
-        // Shock:    0x02 (Wait ~40ms max for peak impact)
-        {LSM6DSOX_INT_DUR2, TAP_DURATION(0x07) | TAP_QUIET(0x01) | TAP_SHOCK(0x02)},
-
-        // 8. Route Double Tap to INT1
-        // Note: We ONLY route Double Tap. Single tap will update the register
-        // but won't fire the physical pin. This reduces ISR overhead.
+        // Single/double-tap selection and wake-up configuration (R/W)
+        {LSM6DSOX_WAKE_UP_THS, WAKE_UP_THS_SINGLE_DOUBLE_TAP},
+        
+        // 8. CRITICAL TIMING for double-tap recognition:
+        // SHOCK: 0x01 = ~20ms (tap must END quickly so sensor knows it's done)
+        // QUIET: 0x01 = ~20ms (brief pause after tap before listening again)
+        // DUR:   0x06 = ~300ms (maximum time between the two taps)
+        //
+        // Problem with your settings: SHOCK=0x03 is TOO LONG
+        // The sensor thinks the tap never ends, so it can't detect a "second" tap
+        {LSM6DSOX_INT_DUR2, TAP_DURATION(0x08) | TAP_QUIET(0x01) | TAP_SHOCK(0x02)},
+        
+        // 9. Route ONLY Double Tap to INT1
         {LSM6DSOX_MD1_CFG, INT1_DOUBLE_TAP})
-
+    
+    LOG_INF("Tap detection configured successfully");
+    LOG_INF("  SHOCK=0x01 (~20ms), QUIET=0x01 (~20ms), DUR=0x06 (~300ms)");
+    
     return 0;
 }
+
+void lsm6dsox_debug_tap_config(void) {
+    uint8_t reg_val;
+    
+    LOG_INF("=== LSM6DSOX Tap Configuration Debug ===");
+    
+    // Read back all tap-related registers
+    lsm6dsox_read_reg(LSM6DSOX_CTRL1_XL, &reg_val);
+    LOG_INF("CTRL1_XL (0x10):    0x%02X", reg_val);
+    
+    lsm6dsox_read_reg(LSM6DSOX_CTRL3_C, &reg_val);
+    LOG_INF("CTRL3_C (0x12):     0x%02X", reg_val);
+    
+    lsm6dsox_read_reg(LSM6DSOX_TAP_CFG0, &reg_val);
+    LOG_INF("TAP_CFG0 (0x56):    0x%02X (Z_EN=%d, Y_EN=%d, X_EN=%d, LIR=%d)", 
+            reg_val, 
+            !!(reg_val & (1<<1)),
+            !!(reg_val & (1<<2)),
+            !!(reg_val & (1<<3)),
+            !!(reg_val & (1<<0)));
+    
+    lsm6dsox_read_reg(LSM6DSOX_TAP_CFG1, &reg_val);
+    LOG_INF("TAP_CFG1 (0x57):    0x%02X (X_THS=0x%02X)", reg_val, reg_val & 0x1F);
+    
+    lsm6dsox_read_reg(LSM6DSOX_TAP_CFG2, &reg_val);
+    LOG_INF("TAP_CFG2 (0x58):    0x%02X (INTERRUPTS_EN=%d)", reg_val, !!(reg_val & 0x80));
+    
+    lsm6dsox_read_reg(LSM6DSOX_TAP_THS_6D, &reg_val);
+    LOG_INF("TAP_THS_6D (0x59):  0x%02X (Z_THS=0x%02X)", reg_val, reg_val & 0x1F);
+    
+    lsm6dsox_read_reg(LSM6DSOX_INT_DUR2, &reg_val);
+    LOG_INF("INT_DUR2 (0x5A):    0x%02X (DUR=%d, QUIET=%d, SHOCK=%d)", 
+            reg_val,
+            (reg_val >> 4) & 0x0F,
+            (reg_val >> 2) & 0x03,
+            reg_val & 0x03);
+    
+    lsm6dsox_read_reg(LSM6DSOX_MD1_CFG, &reg_val);
+    LOG_INF("MD1_CFG (0x5E):     0x%02X (DOUBLE_TAP=%d, SINGLE_TAP=%d)", 
+            reg_val,
+            !!(reg_val & (1<<3)),
+            !!(reg_val & (1<<6)));
+    
+    // Check current interrupt status
+    lsm6dsox_read_reg(LSM6DSOX_TAP_SRC, &reg_val);
+    LOG_INF("TAP_SRC (0x1C):     0x%02X", reg_val);
+    
+    lsm6dsox_read_reg(LSM6DSOX_ALL_INT_SRC, &reg_val);
+    LOG_INF("ALL_INT_SRC (0x1D): 0x%02X", reg_val);
+    
+    LOG_INF("========================================");
+}
+
 
 int lsm6dsox_configure_gyro(void) {
     CONFIGURE_REGS(lsm6dsox_write_reg, 
