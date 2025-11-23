@@ -23,6 +23,16 @@
         }                                                                                          \
     } while (0)
 
+#define CONFIGURE_REGS(write_func, ...) \
+    struct { \
+        uint8_t reg; \
+        uint8_t val; \
+    } config[] = { __VA_ARGS__ }; \
+    for (size_t i = 0; i < ARRAY_SIZE(config); i++) { \
+        TRY_ERR(int, write_func(config[i].reg, config[i].val)); \
+    }
+
+
 #define INIT_CHECK(func)                                        \
     do {                                                        \
         int _ret = (func);                                      \

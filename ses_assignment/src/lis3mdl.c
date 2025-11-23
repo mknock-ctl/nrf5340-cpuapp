@@ -14,6 +14,7 @@ int lis3mdl_write_reg(uint8_t reg, uint8_t value) {
     if (!device_is_ready(dev.bus)) {
         return -ENODEV;
     }
+    
     uint8_t buf[2] = {reg, value};
     return i2c_write_dt(&dev, buf, sizeof(buf));
 }
@@ -33,24 +34,25 @@ int lis3mdl_read_multi_reg(uint8_t reg, uint8_t *data, size_t len) {
 
 int lis3mdl_verify_device(void) {
     uint8_t who_am_i;
-    int ret = i2c_write_read_dt(&dev, (uint8_t[]){LIS3MDL_WHO_AM_I}, 1, &who_am_i, 1);
-    if (ret) {
-        return ret;
-    }
+    TRY_ERR(int, i2c_write_read_dt(&dev, (uint8_t[]){LIS3MDL_WHO_AM_I}, 1, &who_am_i, 1));
+
     if (who_am_i != LIS3MDL_WHO_AM_I_VALUE) {
         LOG_ERR("LIS3MDL dev id not match: 0x%02X", who_am_i);
         return -ENODEV;
     }
+
     LOG_INF("LIS3MDL dev verified: 0x%02X", who_am_i);
     return 0;
 }
 
 int lis3mdl_configure(void) {
-    TRY_ERR(int, lis3mdl_write_reg(LIS3MDL_CTRL_REG1, LIS3MDL_OM_HIGH_PERF | LIS3MDL_ODR_80HZ)); 
-    TRY_ERR(int, lis3mdl_write_reg(LIS3MDL_CTRL_REG2, LIS3MDL_FS_4_GAUSS)); 
-    TRY_ERR(int, lis3mdl_write_reg(LIS3MDL_CTRL_REG3, LIS3MDL_MD_CONTINUOUS)); 
-    TRY_ERR(int, lis3mdl_write_reg(LIS3MDL_CTRL_REG4, LIS3MDL_OMZ_HIGH_PERF | LIS3MDL_BLE_LSB)); 
-    TRY_ERR(int, lis3mdl_write_reg(LIS3MDL_CTRL_REG5, LIS3MDL_BDU_CONTINUOUS)); 
+    CONFIGURE_REGS(lis3mdl_write_reg,
+        {LIS3MDL_CTRL_REG1, LIS3MDL_OM_HIGH_PERF | LIS3MDL_ODR_80HZ},
+        {LIS3MDL_CTRL_REG2, LIS3MDL_FS_4_GAUSS},
+        {LIS3MDL_CTRL_REG3, LIS3MDL_MD_CONTINUOUS},
+        {LIS3MDL_CTRL_REG4, LIS3MDL_OMZ_HIGH_PERF | LIS3MDL_BLE_LSB},
+        {LIS3MDL_CTRL_REG5, LIS3MDL_BDU_CONTINUOUS}
+    )
 
     LOG_INF("LIS3MDL configured: 80Hz, ±4G, continuous");
     return 0;
@@ -61,8 +63,10 @@ int lis3mdl_init(void) {
         LOG_ERR("I2C bus not ready");
         return -ENODEV;
     }
+
     TRY_ERR(int, lis3mdl_verify_device());
     TRY_ERR(int, lis3mdl_configure());
+    
     LOG_INF("LIS3MDL configured for continuous mode");
     return 0;
 }

@@ -4,6 +4,9 @@
 #include <zephyr/kernel.h>
 #include <stdbool.h>
 
+#define TAP_SRC_SINGLE_TAP_MASK  (1 << 5)
+#define TAP_SRC_DOUBLE_TAP_MASK  (1 << 4)
+
 typedef enum {
     TAP_NONE,
     TAP_SINGLE,
@@ -12,6 +15,6 @@ typedef enum {
 
 int tap_detect_init(void);
 bool tap_detect_wait(k_timeout_t timeout);
-tap_event_t tap_detect_read_event(void);
+void tap_detect_ignore(bool ignore);
 
 #endif

@@ -160,6 +160,17 @@ static void wait_for_double_tap(void) {
     LOG_INF("double tap detected");
 }
 
+void drive_safe(int16_t left, int16_t right, uint32_t duration_ms) {
+    tap_detect_ignore(true);
+    
+    mb_drive(left, right);
+    k_sleep(K_MSEC(duration_ms));
+    mb_drive(0, 0);
+    
+    k_sleep(K_MSEC(100)); 
+    tap_detect_ignore(false);
+}
+
 int main(void) {
     __ASSERT(init_hardware() == 0, "Failed to initialize robot");
 
@@ -169,23 +180,18 @@ int main(void) {
     TRY_ERR(int, tap_detect_init());
     TRY_ERR(int, lis3mdl_init());
 
-    LOG_INF("Robot initialization succeeded");
+    LOG_INF("Robot Ready");
+ 
+    float ms_per_degree = 8; //run_calibration_sequence(TURNSPEED);
+    int32_t turn_time_ms = (int32_t)(fabsf((360.0f) * ms_per_degree));
 
     for (;;) {
         int vcap = mb_measure_vcap();
-        int vin = mb_measure_vin();
-        LOG_INF("Vcap: %4dmV, Vin: %4dmV", vcap, vin);       
+        LOG_INF("Vcap: %4dmV", vcap);   
         
-        float ms_per_degree = run_calibration_sequence(TURNSPEED);
-
-        wait_for_double_tap();
-        //robot_turn_to_north();
-        //robot_turn(TURNSPEED);
-        int32_t turn_time_ms = (int32_t)(fabsf((360.0f) * ms_per_degree));
+        wait_for_double_tap();    
         
-        TRY_ERR(mb_error_t, mb_drive(TURNSPEED, -TURNSPEED));  
-        k_sleep(K_MSEC(turn_time_ms));        
-        mb_drive(0, 0);
+        //drive_safe(TURNSPEED, -TURNSPEED, turn_time_ms);
     }
 
     UNREACHABLE();

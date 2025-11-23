@@ -1,5 +1,6 @@
 #include "tap_detect.h"
 #include "lsm6dsox.h"
+#include "ses_assignment.h"
 #include <stdbool.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
@@ -15,24 +16,65 @@ static const struct gpio_dt_spec int1_gpio = {
 static struct gpio_callback int1_cb_data;
 static struct k_sem tap_sem;
 static struct k_work tap_work;
+static volatile bool ignore_taps = false;
 
-static void tap_work_handler(struct k_work *work) {
-    uint8_t tap_src;
-
-    if (lsm6dsox_read_reg(LSM6DSOX_TAP_SRC, &tap_src)) {
-        return;
-    }
-
-    if (tap_src & TAP_SRC_DOUBLE_TAP) {
-        LOG_INF("double tap");
-        k_sem_give(&tap_sem);
-    } else if (tap_src & TAP_SRC_SINGLE_TAP) {
-        LOG_DBG("one tap");
+void tap_detect_ignore(bool ignore) {
+    ignore_taps = ignore;
+    if (ignore) {
+        k_sem_reset(&tap_sem);
     }
 }
 
+static void set_interrupts_active(bool active) {
+    if (active) {
+        gpio_pin_interrupt_configure_dt(&int1_gpio, GPIO_INT_EDGE_RISING);
+    } else {
+        gpio_pin_interrupt_configure_dt(&int1_gpio, GPIO_INT_DISABLE);
+    }
+}
+
+static void tap_work_handler(struct k_work *work) {
+    uint8_t tap_src = 0;
+
+    int ret = lsm6dsox_read_reg(LSM6DSOX_TAP_SRC, &tap_src);
+    
+    if (ret != 0) {
+        LOG_ERR("Failed to read TAP_SRC");
+        set_interrupts_active(true);
+        return;
+    }
+
+    if (ignore_taps) {
+        set_interrupts_active(true);
+        return;
+    }
+
+    bool is_double = (tap_src & TAP_SRC_DOUBLE_TAP_MASK);
+    bool is_single = (tap_src & TAP_SRC_SINGLE_TAP_MASK);
+    LOG_DBG("TAP_SRC=0x%02X", tap_src);
+
+    if (is_double) {
+        LOG_INF(">>> DOUBLE TAP DETECTED (TAP_SRC=0x%02X) <<<", tap_src);
+        k_sem_give(&tap_sem);
+    } else if (is_single) {
+        LOG_DBG("(Single Tap ignored, TAP_SRC=0x%02X)", tap_src);
+    } else {
+        LOG_DBG("Ghost Interrupt (TAP_SRC=0x%02X)", tap_src);
+    }
+    
+    set_interrupts_active(true);
+}
+
 static void int1_isr(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    k_work_submit(&tap_work);
+    // Disable interrupts immediately to prevent ISR flooding while worker runs
+    LOG_DBG("int1_isr");
+    gpio_pin_interrupt_configure_dt(&int1_gpio, GPIO_INT_DISABLE);
+    
+    if (!ignore_taps) {
+        k_work_submit(&tap_work);
+    } else {
+        gpio_pin_interrupt_configure_dt(&int1_gpio, GPIO_INT_EDGE_RISING);
+    }
 }
 
 static int gpio_init(void) {
@@ -40,17 +82,12 @@ static int gpio_init(void) {
         return -ENODEV;
     }
 
-    int ret = gpio_pin_configure_dt(&int1_gpio, GPIO_INPUT);
-    if (ret) {
-        return ret;
-    }
-    ret = gpio_pin_interrupt_configure_dt(&int1_gpio, GPIO_INT_EDGE_RISING);
-    if (ret) {
-        return ret;
-    }
+    TRY_ERR(int, gpio_pin_configure_dt(&int1_gpio, GPIO_INPUT));
 
     gpio_init_callback(&int1_cb_data, int1_isr, BIT(int1_gpio.pin));
     gpio_add_callback(int1_gpio.port, &int1_cb_data);
+
+    set_interrupts_active(true);
 
     return 0;
 }
@@ -59,34 +96,12 @@ int tap_detect_init(void) {
     k_sem_init(&tap_sem, 0, 1);
     k_work_init(&tap_work, tap_work_handler);
 
-    int ret = gpio_init();
-    if (ret) {
-        return ret;
-    }
-
-    ret = lsm6dsox_init();
-    if (ret) {
-        return ret;
-    }
-
+    TRY_ERR(int, lsm6dsox_init());
+    TRY_ERR(int, gpio_init());
 
     return 0;
 }
 
-bool tap_detect_wait(k_timeout_t timeout) { return k_sem_take(&tap_sem, timeout) == 0; }
-
-tap_event_t tap_detect_read_event(void) {
-    uint8_t tap_src;
-
-    if (lsm6dsox_read_reg(LSM6DSOX_TAP_SRC, &tap_src)) {
-        return TAP_NONE;
-    }
-
-    if (tap_src & TAP_SRC_DOUBLE_TAP) {
-        return TAP_DOUBLE;
-    } else if (tap_src & TAP_SRC_SINGLE_TAP) {
-        return TAP_SINGLE;
-    }
-
-    return TAP_NONE;
+bool tap_detect_wait(k_timeout_t timeout) { 
+    return k_sem_take(&tap_sem, timeout) == 0; 
 }
