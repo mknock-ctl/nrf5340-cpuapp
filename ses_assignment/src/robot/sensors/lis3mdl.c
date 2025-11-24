@@ -70,15 +70,21 @@ int lis3mdl_init(void) {
 }
 
 int lis3mdl_read_mag(lis3mdl_data_t *data) {
+    uint8_t status;
+    
+    // Wait for data ready
+    do {
+        TRY_ERR(int, lis3mdl_read_multi_reg(LIS3MDL_STATUS_REG, &status, 1));
+    } while (!(status & 0x08));  // Bit 3 = ZYXDA (data ready)
+    
     uint8_t buf[6];
     TRY_ERR(int, lis3mdl_read_multi_reg(LIS3MDL_OUT_X_L, buf, sizeof(buf)));
-
-    // convert 6 bytes (L, H, L, H, L, H) into three 16b integers (little endian)
+    
     data->x = (int16_t)(buf[0] | (buf[1] << 8));
     data->y = (int16_t)(buf[2] | (buf[3] << 8));
     data->z = (int16_t)(buf[4] | (buf[5] << 8));
 
-    LOG_DBG("Mag X:%d, Y:%d, Z:%d", data->x, data->y, data->z);
-    LOG_DBG("Mag X:%.3f, Y:%.3f", (double) (data->x * (1.0 / 6842.0)) , (double) (data->y * (1.0 / 6842.0)));
+    //LOG_DBG("Mag X:%d, Y:%d, Z:%d", data->x, data->y, data->z);
+    //LOG_DBG("Mag X:%.3f, Y:%.3f", (double) (data->x * (1.0 / 6842.0)) , (double) (data->y * (1.0 / 6842.0)));
     return 0;
 }

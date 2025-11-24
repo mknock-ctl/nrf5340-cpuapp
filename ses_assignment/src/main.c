@@ -49,13 +49,9 @@ int main(void) {
     mb_out_bumper_off();
     mb_leds_off();
 
-    LOG_INF("Robot ready1");
     TRY_ERR(int, tap_detect_init());
-    LOG_INF("Robot ready2");
     TRY_ERR(int, lis3mdl_init());
-    LOG_INF("Robot ready1");
     TRY_ERR(int, calibration_init(CALIBRATION_RESET));
-    LOG_INF("Robot ready3");
 
     if (calibration_needed()) {
         LOG_INF("Calibration required bro, double tap to start.");

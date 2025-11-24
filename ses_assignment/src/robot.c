@@ -154,7 +154,7 @@ void robot_turn_to_north(void) {
 
         LOG_INF("Heading: %.1f -> Turning %d", (double)current_heading, turn_angle);
 
-        //robot_turn(turn_angle);
+        robot_turn(turn_angle);
 
         k_sleep(K_MSEC(500)); // allow magnetometer to settle
         attempts++;
