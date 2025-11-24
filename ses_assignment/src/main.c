@@ -63,18 +63,31 @@ int main(void) {
     LOG_INF("Robot ready");
     wait_for_double_tap();
 
+    int vcap = mb_measure_vcap();
+    LOG_INF("Battery: %4dmV", vcap);
+
     for (int i = 0; i < 3; i++) {
         mb_led_toggle(MB_LED_G);
         k_sleep(K_MSEC(200));
     }
 
     for (;;) {
-        int vcap = mb_measure_vcap();
-        LOG_INF("Battery: %4dmV", vcap);
-
         robot_turn_to_north();
+        robot_move(2000);
+        robot_turn(-90); // 90 degrees left
+        robot_move(2000);
+        robot_turn(90);
+        robot_move(2000);
+        robot_turn(90);
+        robot_move(2000);
+        robot_turn(-180);
+        robot_move(-2000);
+        robot_turn(-90);
+        robot_move(4000);
+        
 
         wait_for_double_tap();
+        k_sleep(K_MSEC(200));
     }
 
     UNREACHABLE();

@@ -37,8 +37,8 @@ float robot_calculate_heading(void) {
         y_sum += y_corr;
     }
     
-    double x_corr_counts = x_sum / 10.0;
-    double y_corr_counts = y_sum / 10.0;
+    double x_corr_counts = x_sum / 100.0;
+    double y_corr_counts = y_sum / 100.0;
     
     double angle_rad = 30.0 * M_PI / 180.0;
     double cos_a = cos(angle_rad);
@@ -58,8 +58,50 @@ float robot_calculate_heading(void) {
 
 
 void robot_move(int32_t distance_mm) {
-    LOG_INF("Move %d mm - Not Implemented", distance_mm);
-    // TODO
+    if (distance_mm == 0)
+        return;
+
+    bool forward = (distance_mm > 0);
+    int32_t target_distance = abs(distance_mm);
+    uint32_t duration_ms = (uint32_t)((float)target_distance / MM_PER_MS_DRIVE);
+
+    int64_t start_time = k_uptime_get();
+    int16_t base_speed = SPEED;
+    int64_t elapsed = 0;
+
+    while (elapsed < duration_ms) {
+        elapsed = k_uptime_get() - start_time;
+        
+        float time_remaining = duration_ms - elapsed;
+        float distance_remaining = time_remaining * MM_PER_MS_DRIVE;
+        
+        int16_t current_speed = (int16_t)(distance_remaining * KP);
+        
+        if (current_speed > base_speed)
+            current_speed = base_speed;
+        if (current_speed < MIN_SPEED)
+            current_speed = MIN_SPEED;
+        
+        if (forward) {
+            mb_drive(current_speed, current_speed);
+        } else {
+            mb_drive(-current_speed, -current_speed);
+        }
+        
+        k_sleep(K_MSEC(5));
+    }
+    
+    if (forward) {
+        mb_drive(-SPEED, -SPEED);
+    } else {
+        mb_drive(SPEED, SPEED);
+    }
+    k_sleep(K_MSEC(25));
+    
+    mb_drive(0, 0);
+    k_sleep(K_MSEC(100));
+    
+    LOG_INF("Moved %.1f mm (Target %d)", (double)elapsed, distance_mm);
 }
 
 void robot_turn(int32_t angle_deg) {
@@ -70,9 +112,6 @@ void robot_turn(int32_t angle_deg) {
     float current_angle = 0.0f;
     lsm6dsox_gyro_data_t gyro;
     int64_t last_time = k_uptime_get();
-
-    const float KP = 2.5f;                    // Proportional gain
-    const int16_t MIN_SPEED = TURNSPEED / 10; // Minimum speed to prevent stalling
     int16_t base_speed = TURNSPEED;
 
     while (current_angle < target_angle) {

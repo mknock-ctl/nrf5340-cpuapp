@@ -10,6 +10,7 @@ LOG_MODULE_REGISTER(lis3mdl, LOG_LEVEL_DBG);
 
 static const struct i2c_dt_spec dev = I2C_DT_SPEC_GET(LIS3MDL_NODE);
 
+
 int lis3mdl_write_reg(uint8_t reg, uint8_t value) {
     if (!device_is_ready(dev.bus)) {
         return -ENODEV;
@@ -45,17 +46,6 @@ int lis3mdl_verify_device(void) {
     return 0;
 }
 
-int lis3mdl_configure(void) {
-    CONFIGURE_REGS(lis3mdl_write_reg, {LIS3MDL_CTRL_REG1, LIS3MDL_OM_HIGH_PERF | LIS3MDL_ODR_80HZ},
-                   {LIS3MDL_CTRL_REG2, LIS3MDL_FS_4_GAUSS},
-                   {LIS3MDL_CTRL_REG3, LIS3MDL_MD_CONTINUOUS},
-                   {LIS3MDL_CTRL_REG4, LIS3MDL_OMZ_HIGH_PERF | LIS3MDL_BLE_LSB},
-                   {LIS3MDL_CTRL_REG5, LIS3MDL_BDU_CONTINUOUS})
-
-    LOG_INF("LIS3MDL configured: 80Hz, ±4G, continuous");
-    return 0;
-}
-
 int lis3mdl_init(void) {
     if (!device_is_ready(dev.bus)) {
         LOG_ERR("I2C bus not ready");
@@ -63,7 +53,12 @@ int lis3mdl_init(void) {
     }
 
     TRY_ERR(int, lis3mdl_verify_device());
-    TRY_ERR(int, lis3mdl_configure());
+    
+    CONFIGURE_REGS(lis3mdl_write_reg, {LIS3MDL_CTRL_REG1, LIS3MDL_OM_HIGH_PERF | LIS3MDL_ODR_80HZ},
+                   {LIS3MDL_CTRL_REG2, LIS3MDL_FS_4_GAUSS},
+                   {LIS3MDL_CTRL_REG3, LIS3MDL_MD_CONTINUOUS},
+                   {LIS3MDL_CTRL_REG4, LIS3MDL_OMZ_HIGH_PERF | LIS3MDL_BLE_LSB},
+                   {LIS3MDL_CTRL_REG5, LIS3MDL_BDU_CONTINUOUS})
 
     LOG_INF("LIS3MDL configured for continuous mode");
     return 0;
@@ -71,11 +66,7 @@ int lis3mdl_init(void) {
 
 int lis3mdl_read_mag(lis3mdl_data_t *data) {
     uint8_t status;
-    
-    // Wait for data ready
-    do {
-        TRY_ERR(int, lis3mdl_read_multi_reg(LIS3MDL_STATUS_REG, &status, 1));
-    } while (!(status & 0x08));  // Bit 3 = ZYXDA (data ready)
+    TRY_ERR(int, lis3mdl_read_multi_reg(LIS3MDL_STATUS_REG, &status, 1));
     
     uint8_t buf[6];
     TRY_ERR(int, lis3mdl_read_multi_reg(LIS3MDL_OUT_X_L, buf, sizeof(buf)));
@@ -88,3 +79,4 @@ int lis3mdl_read_mag(lis3mdl_data_t *data) {
     //LOG_DBG("Mag X:%.3f, Y:%.3f", (double) (data->x * (1.0 / 6842.0)) , (double) (data->y * (1.0 / 6842.0)));
     return 0;
 }
+

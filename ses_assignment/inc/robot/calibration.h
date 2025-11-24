@@ -6,6 +6,7 @@
 
 extern float g_gyro_bias_z;
 extern float g_ms_per_degree;
+extern float g_drive_avg_duration_ms;
 
 extern float g_mag_offset_x;
 extern float g_mag_offset_y;

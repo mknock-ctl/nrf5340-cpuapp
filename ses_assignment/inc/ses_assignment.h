@@ -13,6 +13,9 @@
 
 #define SPEED 100
 #define TURNSPEED 100
+#define MIN_SPEED 30
+#define KP 3.0f
+#define MM_PER_MS_DRIVE (3500.0f / 2000.0f) // calibrated via g_drive_avg_duration_ms
 
 #define HEADING_OFFSET_DEG 0.0f
 
@@ -21,6 +24,7 @@
 #define MAX_TURN_ATTEMPTS 5
 
 #define ROBOT_HEADING_NORTH 0.0f
+#define HEADING_ALPHA 0.3
 
 #define VCAP_MAX 3000
 #define VCAP_MIN 600

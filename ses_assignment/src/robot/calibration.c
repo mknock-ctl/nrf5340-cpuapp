@@ -1,6 +1,6 @@
 #include "robot/calibration.h"
-#include "robot/sensors/lsm6dsox.h"
 #include "robot/sensors/lis3mdl.h"
+#include "robot/sensors/lsm6dsox.h"
 #include "robot/settings.h"
 #include "ses_assignment.h"
 #include <errno.h>
@@ -16,6 +16,7 @@ float g_mag_offset_x = -1.0f;
 float g_mag_offset_y = -1.0f;
 float g_mag_scale_x = -1.0f;
 float g_mag_scale_y = -1.0f;
+float g_drive_avg_duration_ms = 0.0f;
 
 static const setting_entry_t robot_settings[] = {
     {"bias_z", &g_gyro_bias_z, sizeof(g_gyro_bias_z)},
@@ -23,16 +24,20 @@ static const setting_entry_t robot_settings[] = {
     {"mag_offset_x", &g_mag_offset_x, sizeof(g_mag_offset_x)},
     {"mag_offset_y", &g_mag_offset_y, sizeof(g_mag_offset_y)},
     {"mag_scale_x", &g_mag_scale_x, sizeof(g_mag_scale_x)},
-    {"mag_scale_y", &g_mag_scale_y, sizeof(g_mag_scale_y)}
-};
+    {"mag_scale_y", &g_mag_scale_y, sizeof(g_mag_scale_y)},
+    {"drive_avg_duration_ms", &g_drive_avg_duration_ms, sizeof(g_drive_avg_duration_ms)}};
 
 int calibration_init(bool reset) {
-    TRY_ERR(int, settings_init_and_register("calibration", robot_settings, ARRAY_SIZE(robot_settings)));
+    TRY_ERR(int,
+            settings_init_and_register("calibration", robot_settings, ARRAY_SIZE(robot_settings)));
 
     if (reset) {
         const float g_reset = 0.0f;
         settings_save_float("calibration/ms_per_deg", g_reset);
         g_ms_per_degree = 0.0f;
+
+        settings_save_float("calibration/drive_avg_duration_ms", g_drive_avg_duration_ms);
+        g_drive_avg_duration_ms = 0.0f;
 
         const float mag_reset = -1.0f;
         settings_save_float("calibration/mag_offset_x", mag_reset);
@@ -42,13 +47,17 @@ int calibration_init(bool reset) {
         /* The scales change with the offsets */
     }
 
-    LOG_INF("Booted. Bias: %.3f, MS/Deg: %.3f, magx: %.3f, maxy: %.3f,", (double)g_gyro_bias_z, (double)g_ms_per_degree
-             , (double)g_mag_offset_x, (double)g_mag_offset_y);
-    LOG_INF("Booted 2. MagScaleX: %.3f, MagScaleY: %.3f", (double)g_mag_scale_x, (double)g_mag_scale_y);
+    LOG_INF("Booted. Bias: %.3f, MS/Deg: %.3f, magx: %.3f, maxy: %.3f,", (double)g_gyro_bias_z,
+            (double)g_ms_per_degree, (double)g_mag_offset_x, (double)g_mag_offset_y);
+    LOG_INF("Booted 2. MagScaleX: %.3f, MagScaleY: %.3f, DriveAvgDur: %.3f", (double)g_mag_scale_x,
+            (double)g_mag_scale_y, (double)g_drive_avg_duration_ms);
     return 0;
 }
 
-bool calibration_needed(void) { return (fabsf(g_ms_per_degree) < 0.001f || g_mag_offset_x < 0 || g_mag_offset_y < 0); }
+bool calibration_needed(void) {
+    return (fabsf(g_ms_per_degree) < 0.001f || fabsf(g_drive_avg_duration_ms) < 0.001f ||
+            g_mag_offset_x < 0 || g_mag_offset_y < 0);
+}
 
 static void calibrate_gyro_offset(void) {
     LOG_INF("Calibrating gyro bias (keep robot still!)...");
@@ -108,12 +117,13 @@ static float calibrate_turn_rate_internal(int16_t speed, uint32_t duration_ms,
 }
 
 static float gyro_calibration_sequence(int16_t speed, uint32_t duration_ms,
-                                       void (*drive_func)(int16_t, int16_t), void (*led_func)(int)) {
+                                       void (*drive_func)(int16_t, int16_t),
+                                       void (*led_func)(int)) {
     calibrate_gyro_offset();
     const int num_runs = 3;
     float sum_ms_per_deg = 0.0f;
     LOG_INF("Starting Sequence: Runs=%d, Speed=%d", num_runs, speed);
-    
+
     for (int i = 0; i < num_runs; i++) {
         LOG_INF("--- Run %d/%d ---", i + 1, num_runs);
 
@@ -139,15 +149,18 @@ static float gyro_calibration_sequence(int16_t speed, uint32_t duration_ms,
     return avg_ms_per_deg;
 }
 
-static void calibrate_magnetometer_sequence(uint32_t duration_ms, void (*drive_func)(int16_t, int16_t), void (*led_func)(int)) {
-    LOG_INF("Robot will spin for %.3f seconds. Keep it on the floor!", (double) (duration_ms / 1000));
-    
+static void calibrate_magnetometer_sequence(uint32_t duration_ms,
+                                            void (*drive_func)(int16_t, int16_t),
+                                            void (*led_func)(int)) {
+    LOG_INF("Robot will spin for %.3f seconds. Keep it on the floor!",
+            (double)(duration_ms / 1000));
+
     int16_t min_x = 32000, max_x = -32000;
     int16_t min_y = 32000, max_y = -32000;
     lis3mdl_data_t data;
     int sample_count = 0;
 
-    drive_func(TURNSPEED, -TURNSPEED);    
+    drive_func(TURNSPEED, -TURNSPEED);
     uint32_t start_time = k_uptime_get_32();
 
     if (led_func) {
@@ -158,7 +171,7 @@ static void calibrate_magnetometer_sequence(uint32_t duration_ms, void (*drive_f
     const float alpha = 0.1f;
     bool initialized = false;
 
-    while (k_uptime_get_32() - start_time < duration_ms) {     
+    while (k_uptime_get_32() - start_time < duration_ms) {
         TRY_ERR(int, lis3mdl_read_mag(&data));
 
         /* low-pass filter (smooth noise) */
@@ -174,10 +187,14 @@ static void calibrate_magnetometer_sequence(uint32_t duration_ms, void (*drive_f
         int32_t x_val = (int32_t)roundf(x_filtered);
         int32_t y_val = (int32_t)roundf(y_filtered);
 
-        if (x_val < min_x) min_x = x_val;
-        if (x_val > max_x) max_x = x_val;
-        if (y_val < min_y) min_y = y_val;
-        if (y_val > max_y) max_y = y_val;
+        if (x_val < min_x)
+            min_x = x_val;
+        if (x_val > max_x)
+            max_x = x_val;
+        if (y_val < min_y)
+            min_y = y_val;
+        if (y_val > max_y)
+            max_y = y_val;
 
         sample_count++;
         k_sleep(K_MSEC(20));
@@ -207,11 +224,53 @@ static void calibrate_magnetometer_sequence(uint32_t duration_ms, void (*drive_f
     settings_save_float("calibration/mag_offset_x", g_mag_offset_x);
     settings_save_float("calibration/mag_offset_y", g_mag_offset_y);
     settings_save_float("calibration/mag_scale_x", g_mag_scale_x);
-    settings_save_float("calibration/mag_scale_y", g_mag_scale_y); 
+    settings_save_float("calibration/mag_scale_y", g_mag_scale_y);
+}
+
+static float calibrate_distance_internal(int16_t speed, uint32_t duration_ms,
+                                         void (*drive_func)(int16_t, int16_t)) {
+    drive_func(speed, speed);
+
+    int64_t start_time = k_uptime_get();
+    k_sleep(K_MSEC(duration_ms));
+
+    drive_func(0, 0);
+
+    int64_t actual_duration = k_uptime_get() - start_time;
+
+    return (float)actual_duration;
+}
+
+static float distance_calibration_sequence(int16_t speed, uint32_t duration_ms,
+                                           void (*drive_func)(int16_t, int16_t),
+                                           void (*led_func)(int)) {
+    const int num_runs = 3;
+    float total_duration = 0.0f;
+
+    for (int i = 0; i < num_runs; i++) {
+        if (led_func) {
+            led_func(i);
+        }
+
+        k_sleep(K_MSEC(2000));
+
+        float duration = calibrate_distance_internal(speed, duration_ms, drive_func);
+        total_duration += duration;
+
+        k_sleep(K_MSEC(2000));
+    }
+    float avg_duration = total_duration / num_runs;
+
+    LOG_INF("Example: if robot traveled 500mm, then mm_per_ms = 500 / %.1f = %.3f",
+            (double)avg_duration, 500.0 / (double)avg_duration);
+
+    settings_save_float("calibration/drive_avg_duration_ms", avg_duration);
+    return avg_duration;
 }
 
 void calibration_sequence(int16_t speed, void (*drive_func)(int16_t, int16_t),
-                           void (*led_func)(int)) {
+                          void (*led_func)(int)) {
     gyro_calibration_sequence(speed, 2000, drive_func, led_func);
     calibrate_magnetometer_sequence(10000, drive_func, led_func);
+    distance_calibration_sequence(speed, 2000, drive_func, led_func);
 }
