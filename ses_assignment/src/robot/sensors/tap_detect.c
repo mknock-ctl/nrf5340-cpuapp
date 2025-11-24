@@ -1,5 +1,5 @@
-#include "tap_detect.h"
-#include "lsm6dsox.h"
+#include "robot/sensors/tap_detect.h"
+#include "robot/sensors/lsm6dsox.h"
 #include "ses_assignment.h"
 #include <stdbool.h>
 #include <zephyr/drivers/gpio.h>
@@ -22,14 +22,6 @@ void tap_detect_ignore(bool ignore) {
     ignore_taps = ignore;
     if (ignore) {
         k_sem_reset(&tap_sem);
-    }
-}
-
-static void set_interrupts_active(bool active) {
-    if (active) {
-        gpio_pin_interrupt_configure_dt(&int1_gpio, GPIO_INT_EDGE_RISING);
-    } else {
-        gpio_pin_interrupt_configure_dt(&int1_gpio, GPIO_INT_DISABLE);
     }
 }
 
@@ -60,7 +52,7 @@ static void tap_work_handler(struct k_work *work) {
 
 static void int1_isr(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
     LOG_DBG("INT1 interrupt triggered");
-    
+
     k_work_submit(&tap_work);
 }
 
@@ -91,34 +83,4 @@ int tap_detect_init(void) {
     return 0;
 }
 
-bool tap_detect_wait(k_timeout_t timeout) { 
-    return k_sem_take(&tap_sem, timeout) == 0; 
-}
-
-void tap_detect_poll_test(void) {
-    LOG_INF("=== Starting tap polling test (10 seconds) ===");
-    
-    int64_t start = k_uptime_get();
-    int tap_count = 0;
-    
-    while ((k_uptime_get() - start) < 10000) {
-        uint8_t tap_src = 0;
-        lsm6dsox_read_reg(LSM6DSOX_TAP_SRC, &tap_src);
-        
-        if (tap_src != 0) {
-            bool is_double = (tap_src & (1 << 4)) != 0;
-            bool is_single = (tap_src & (1 << 5)) != 0;
-            
-            LOG_INF("[%lld ms] TAP_SRC=0x%02X: %s%s", 
-                    k_uptime_get() - start,
-                    tap_src,
-                    is_double ? "DOUBLE " : "",
-                    is_single ? "SINGLE " : "");
-            tap_count++;
-        }
-        
-        k_sleep(K_MSEC(10));
-    }
-    
-    LOG_INF("=== Polling test complete: %d taps detected ===", tap_count);
-}
+bool tap_detect_wait(k_timeout_t timeout) { return k_sem_take(&tap_sem, timeout) == 0; }

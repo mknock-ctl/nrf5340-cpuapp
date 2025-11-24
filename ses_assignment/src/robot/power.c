@@ -1,11 +1,7 @@
-#include "power.h"
-#include <stdbool.h>
+#include "robot/power.h"
+#include "ses_assignment.h"
 #include <mergebot.h>
-
-#define VCAP_MAX 3000
-#define VCAP_MIN 600
-#define THRESHOLD_HIGH 66
-#define THRESHOLD_MED 33
+#include <stdbool.h>
 
 static power_level_t last_level = POWER_HIGH + 1;
 

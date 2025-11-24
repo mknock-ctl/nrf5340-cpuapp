@@ -1,6 +1,6 @@
-#include "lis3mdl.h"
-#include <errno.h>
+#include "robot/sensors/lis3mdl.h"
 #include "ses_assignment.h"
+#include <errno.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/logging/log.h>
@@ -14,7 +14,7 @@ int lis3mdl_write_reg(uint8_t reg, uint8_t value) {
     if (!device_is_ready(dev.bus)) {
         return -ENODEV;
     }
-    
+
     uint8_t buf[2] = {reg, value};
     return i2c_write_dt(&dev, buf, sizeof(buf));
 }
@@ -28,7 +28,7 @@ int lis3mdl_read_multi_reg(uint8_t reg, uint8_t *data, size_t len) {
         return -ENODEV;
     }
     // Set MSB for auto increment read (0x80)
-    uint8_t reg_addr = reg | BIT(7); 
+    uint8_t reg_addr = reg | BIT(7);
     return i2c_write_read_dt(&dev, &reg_addr, 1, data, len);
 }
 
@@ -46,13 +46,11 @@ int lis3mdl_verify_device(void) {
 }
 
 int lis3mdl_configure(void) {
-    CONFIGURE_REGS(lis3mdl_write_reg,
-        {LIS3MDL_CTRL_REG1, LIS3MDL_OM_HIGH_PERF | LIS3MDL_ODR_80HZ},
-        {LIS3MDL_CTRL_REG2, LIS3MDL_FS_4_GAUSS},
-        {LIS3MDL_CTRL_REG3, LIS3MDL_MD_CONTINUOUS},
-        {LIS3MDL_CTRL_REG4, LIS3MDL_OMZ_HIGH_PERF | LIS3MDL_BLE_LSB},
-        {LIS3MDL_CTRL_REG5, LIS3MDL_BDU_CONTINUOUS}
-    )
+    CONFIGURE_REGS(lis3mdl_write_reg, {LIS3MDL_CTRL_REG1, LIS3MDL_OM_HIGH_PERF | LIS3MDL_ODR_80HZ},
+                   {LIS3MDL_CTRL_REG2, LIS3MDL_FS_4_GAUSS},
+                   {LIS3MDL_CTRL_REG3, LIS3MDL_MD_CONTINUOUS},
+                   {LIS3MDL_CTRL_REG4, LIS3MDL_OMZ_HIGH_PERF | LIS3MDL_BLE_LSB},
+                   {LIS3MDL_CTRL_REG5, LIS3MDL_BDU_CONTINUOUS})
 
     LOG_INF("LIS3MDL configured: 80Hz, ±4G, continuous");
     return 0;
@@ -66,7 +64,7 @@ int lis3mdl_init(void) {
 
     TRY_ERR(int, lis3mdl_verify_device());
     TRY_ERR(int, lis3mdl_configure());
-    
+
     LOG_INF("LIS3MDL configured for continuous mode");
     return 0;
 }
@@ -74,7 +72,7 @@ int lis3mdl_init(void) {
 int lis3mdl_read_mag(lis3mdl_data_t *data) {
     uint8_t buf[6];
     TRY_ERR(int, lis3mdl_read_multi_reg(LIS3MDL_OUT_X_L, buf, sizeof(buf)));
-    
+
     // convert 6 bytes (L, H, L, H, L, H) into three 16b integers (little endian)
     data->x = (int16_t)(buf[0] | (buf[1] << 8));
     data->y = (int16_t)(buf[2] | (buf[3] << 8));

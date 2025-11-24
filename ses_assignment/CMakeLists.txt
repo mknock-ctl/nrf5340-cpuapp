@@ -4,4 +4,5 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(assignment_ses)
 
 target_include_directories(app PRIVATE inc)
-target_sources(app PRIVATE src/main.c src/robot.c src/tap_detect.c src/lsm6dsox.c src/power.c src/lis3mdl.c)
+target_sources(app PRIVATE src/main.c src/robot.c src/robot/sensors/tap_detect.c 
+    src/robot/sensors/lsm6dsox.c src/robot/power.c src/robot/sensors/lis3mdl.c src/robot/calibration.c)
