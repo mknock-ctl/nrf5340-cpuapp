@@ -29,7 +29,6 @@ static void tap_work_handler(struct k_work *work) {
     uint8_t tap_src = 0;
 
     TRY_ERR(int, lsm6dsox_read_reg(LSM6DSOX_TAP_SRC, &tap_src));
-    LOG_DBG("TAP_SRC=0x%02X", tap_src);
 
     if (ignore_taps) {
         LOG_DBG("Tap ignored (ignore_taps=true)");
@@ -38,7 +37,6 @@ static void tap_work_handler(struct k_work *work) {
 
     bool is_double = (tap_src & TAP_SRC_DOUBLE_TAP_MASK);
     bool is_single = (tap_src & TAP_SRC_SINGLE_TAP_MASK);
-    LOG_DBG("TAP_SRC=0x%02X", tap_src);
 
     if (is_double) {
         LOG_INF(">>> DOUBLE TAP DETECTED (TAP_SRC=0x%02X) <<<", tap_src);
@@ -51,8 +49,6 @@ static void tap_work_handler(struct k_work *work) {
 }
 
 static void int1_isr(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    LOG_DBG("INT1 interrupt triggered");
-
     k_work_submit(&tap_work);
 }
 

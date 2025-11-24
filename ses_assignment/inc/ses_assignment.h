@@ -14,13 +14,11 @@
 #define SPEED 100
 #define TURNSPEED 100
 
-#define MAG_OFFSET_X 0
-#define MAG_OFFSET_Y 0
 #define HEADING_OFFSET_DEG 0.0f
 
 #define HEADING_TOLERANCE 5.0f
 #define TURN_TIMEOUT_MS 30000
-#define MAX_TURN_ATTEMPTS 3
+#define MAX_TURN_ATTEMPTS 1
 
 #define ROBOT_HEADING_NORTH 0.0f
 
@@ -45,8 +43,10 @@
 #define TRY_ERR(err_t, test)                                                                       \
     do {                                                                                           \
         err_t err = (test);                                                                        \
-        if (err)                                                                                   \
+        if (err){ \
+            LOG_ERR("%s failed at %s:%d: %d", #test, __FILE__, __LINE__, err);                     \
             return err;                                                                            \
+        }                                                                                 \
     } while (0)
 
 #define CONFIGURE_REGS(write_func, ...)                                                            \

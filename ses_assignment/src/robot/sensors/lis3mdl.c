@@ -79,5 +79,6 @@ int lis3mdl_read_mag(lis3mdl_data_t *data) {
     data->z = (int16_t)(buf[4] | (buf[5] << 8));
 
     LOG_DBG("Mag X:%d, Y:%d, Z:%d", data->x, data->y, data->z);
+    LOG_DBG("Mag X:%.3f, Y:%.3f", (double) (data->x * (1.0 / 6842.0)) , (double) (data->y * (1.0 / 6842.0)));
     return 0;
 }

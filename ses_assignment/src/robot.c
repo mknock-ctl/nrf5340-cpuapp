@@ -20,36 +20,42 @@ static float normalize_angle_diff(float angle) {
 
 float robot_calculate_heading(void) {
     lis3mdl_data_t mag_data;
-
-    int err = lis3mdl_read_mag(&mag_data);
-    if (err) {
-        LOG_ERR("Mag read failed: %d", err);
-        return 0.0f;
+    
+    double x_sum = 0.0;
+    double y_sum = 0.0;
+    
+    for (int i = 0; i < 100; i++) {
+        TRY_ERR(int, lis3mdl_read_mag(&mag_data));
+        
+        int32_t x_raw = mag_data.x;
+        int32_t y_raw = mag_data.y;
+        
+        double x_corr = ((double)x_raw - (double)g_mag_offset_x) * (double)g_mag_scale_x;
+        double y_corr = ((double)y_raw - (double)g_mag_offset_y) * (double)g_mag_scale_y;
+        
+        x_sum += x_corr;
+        y_sum += y_corr;
     }
-
-    int16_t mag_x = mag_data.x - MAG_OFFSET_X;
-    int16_t mag_y = mag_data.y - MAG_OFFSET_Y;
-
-    // calc heading in radians
-    float heading_rad = atan2f((float)mag_y, (float)mag_x);
-    float heading_deg = RAD_TO_DEG(heading_rad);
-
-    heading_deg = 90.0f - heading_deg;
-
-    while (heading_deg >= 360.0f)
-        heading_deg -= 360.0f;
-    while (heading_deg < 0.0f)
-        heading_deg += 360.0f;
-
-    heading_deg += HEADING_OFFSET_DEG;
-    if (heading_deg >= 360.0f)
-        heading_deg -= 360.0f;
-    if (heading_deg < 0.0f)
-        heading_deg += 360.0f;
-
-    LOG_DBG("Heading: %.1f (X:%d Y:%d)", (double)heading_deg, mag_data.x, mag_data.y);
+    
+    double x_corr_counts = x_sum / 10.0;
+    double y_corr_counts = y_sum / 10.0;
+    
+    double angle_rad = 30.0 * M_PI / 180.0;
+    double cos_a = cos(angle_rad);
+    double sin_a = sin(angle_rad);
+    
+    double x_rotated = x_corr_counts * cos_a - y_corr_counts * sin_a;
+    double y_rotated = x_corr_counts * sin_a + y_corr_counts * cos_a;
+    
+    double heading = atan2(y_rotated, x_rotated) * 180.0 / M_PI; // degrees
+    float heading_deg = normalize_angle_diff((float)heading);
+    
+    LOG_DBG("Heading: %.1f (x:%.3f y:%.3f, rotated x:%.3f y:%.3f)",
+            (double)heading_deg, x_corr_counts, y_corr_counts, x_rotated, y_rotated);
+    
     return heading_deg;
 }
+
 
 void robot_move(int32_t distance_mm) {
     LOG_INF("Move %d mm - Not Implemented", distance_mm);
@@ -106,7 +112,7 @@ void robot_turn(int32_t angle_deg) {
     } else {
         mb_drive(TURNSPEED, -TURNSPEED);
     }
-    k_sleep(K_MSEC(52)); // Brake duration (needs tuning)
+    k_sleep(K_MSEC(25)); // Brake duration (needs tuning)
 
     mb_drive(0, 0);
 
@@ -148,8 +154,7 @@ void robot_turn_to_north(void) {
 
         LOG_INF("Heading: %.1f -> Turning %d", (double)current_heading, turn_angle);
 
-        // TODO: check sign convention of robot_turn vs delta_angle here
-        robot_turn(turn_angle);
+        //robot_turn(turn_angle);
 
         k_sleep(K_MSEC(500)); // allow magnetometer to settle
         attempts++;
