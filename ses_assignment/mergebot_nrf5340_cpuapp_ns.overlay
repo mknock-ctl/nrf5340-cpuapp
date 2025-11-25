@@ -42,16 +42,21 @@
     };
 };
 
+&gpio0 {
+    status = "okay";
+};
 
 / {
     aliases {
-        int1 = &int1_gpio;
+        int1-pin = &int1_gpio_node;
         lis3mdl = &lis3mdl;
     };
     
-    int1_gpio: int1-gpio {
-        compatible = "gpio-leds";
-        gpios = <&gpio0 12 GPIO_ACTIVE_HIGH>;
-        label = "IMU INT1";
+    int1_gpio_node: int1-gpio-node {
+        compatible = "user-keys";
+        imu_int1_pin {
+            gpios = <&gpio0 12 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
+            label = "IMU INT1 Pin";
+        };
     };
 };

@@ -2,6 +2,7 @@
 #define LSM6DSOX_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #define LSM6DSOX_ADDR 0x6A
 #define LSM6DSOX_WHO_AM_I 0x0F
@@ -17,9 +18,11 @@
 #define LSM6DSOX_TAP_THS_6D 0x59
 #define LSM6DSOX_INT_DUR2 0x5A
 #define LSM6DSOX_WAKE_UP_THS 0x5B
+#define LSM6DSOX_WAKE_UP_DUR 0x5C
 #define LSM6DSOX_MD1_CFG 0x5E
-#define LSM6DSOX_ALL_INT_SRC 0x1D
+#define LSM6DSOX_WAKE_UP_SRC 0x1B
 #define LSM6DSOX_TAP_SRC 0x1C
+#define LSM6DSOX_ALL_INT_SRC 0x1D
 #define LSM6DSOX_OUTX_L_G 0x22
 
 // CTRL1_XL
@@ -49,7 +52,9 @@
 
 // MD1_CFG
 #define INT1_DOUBLE_TAP (1 << 3)
+#define INT1_WU         (1 << 5)
 #define INT1_SINGLE_TAP (1 << 6)
+#define INT1_6D         (1 << 2)
 
 // TAP SRC Flags
 #define TAP_SRC_DOUBLE_TAP (1 << 4)
@@ -57,6 +62,7 @@
 
 // WAKE_UP_THS
 #define WAKE_UP_THS_SINGLE_DOUBLE_TAP (1 << 7)
+#define CRASH_THRESHOLD_WAKEUP 0x02
 
 // gyro values
 
@@ -69,12 +75,22 @@ typedef struct {
     int16_t y;
     int16_t z;
 } lsm6dsox_gyro_data_t;
-void lsm6dsox_clear_interrupts(void);
 
 int lsm6dsox_init(void);
 int lsm6dsox_verify_device(void);
+
 int lsm6dsox_read_reg(uint8_t reg, uint8_t *value);
+int lsm6dsox_write_reg(uint8_t reg, uint8_t value);
+int lsm6dsox_update_reg(uint8_t reg, uint8_t mask, uint8_t value);
+
+int lsm6dsox_route_int1(uint8_t bit_mask, bool enable);
+
+int lsm6dsox_configure_tap_params(void);
+int lsm6dsox_configure_crash_params(void);
+int lsm6dsox_configure_gyro(void);
+
 float lsm6dsox_gyro_to_dps(int16_t raw_value);
 int lsm6dsox_read_gyro(lsm6dsox_gyro_data_t *data);
+void lsm6dsox_clear_interrupts(void);
 
 #endif

@@ -2,6 +2,9 @@
 #include "ses_assignment.h"
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/i2c.h>
+#include "robot/sensors/int1_gpio.h"
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/devicetree.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
@@ -27,6 +30,13 @@ int lsm6dsox_read_reg(uint8_t reg, uint8_t *value) {
     return i2c_write_read_dt(&dev, &reg, 1, value, 1);
 }
 
+int lsm6dsox_update_reg(uint8_t reg, uint8_t mask, uint8_t val) {
+    uint8_t old_val;
+    TRY_ERR(int, lsm6dsox_read_reg(reg, &old_val));
+    uint8_t new_val = (old_val & ~mask) | (val & mask);
+    return lsm6dsox_write_reg(reg, new_val);
+}
+
 int lsm6dsox_verify_device(void) {
     uint8_t who_am_i;
     TRY_ERR(int, lsm6dsox_read_reg(LSM6DSOX_WHO_AM_I, &who_am_i));
@@ -40,7 +50,15 @@ int lsm6dsox_verify_device(void) {
     return 0;
 }
 
-static int lsm6dsox_configure_tap(void) {
+int lsm6dsox_route_int1(uint8_t bit_mask, bool enable) {
+    // This allows multiple interrupts to be OR'd together on INT1
+    // or cleanly removed without resetting the whole register.
+    return lsm6dsox_update_reg(LSM6DSOX_MD1_CFG, 
+                               bit_mask, 
+                               enable ? bit_mask : 0);
+}
+
+int lsm6dsox_configure_tap_params(void) {
     LOG_INF("Configuring tap detection...");
 
     CONFIGURE_REGS(lsm6dsox_write_reg,
@@ -67,9 +85,8 @@ static int lsm6dsox_configure_tap(void) {
                    {LSM6DSOX_TAP_THS_6D, TAP_THRESHOLD_Z(0x0C)},
 
                    // Single/double-tap selection and wake-up configuration (R/W)
-                   {LSM6DSOX_WAKE_UP_THS, WAKE_UP_THS_SINGLE_DOUBLE_TAP},
+                   {LSM6DSOX_WAKE_UP_THS, WAKE_UP_THS_SINGLE_DOUBLE_TAP | CRASH_THRESHOLD_WAKEUP},
 
-                   // 8. CRITICAL TIMING for double-tap recognition:
                    // SHOCK: 0x01 = ~20ms (tap must END quickly so sensor knows it's done)
                    // QUIET: 0x01 = ~20ms (brief pause after tap before listening again)
                    // DUR:   0x06 = ~300ms (maximum time between the two taps)
@@ -78,11 +95,25 @@ static int lsm6dsox_configure_tap(void) {
                    // The sensor thinks the tap never ends, so it can't detect a "second" tap
                    {LSM6DSOX_INT_DUR2, TAP_DURATION(0x06) | TAP_QUIET(0x02) | TAP_SHOCK(0x02)},
 
-                   // 9. Route ONLY Double Tap to INT1
-                   {LSM6DSOX_MD1_CFG, INT1_DOUBLE_TAP})
+                   {LSM6DSOX_WAKE_UP_DUR, 0x00});
 
     LOG_INF("Tap detection configured successfully");
-    LOG_INF("  SHOCK=0x01 (~20ms), QUIET=0x01 (~20ms), DUR=0x06 (~300ms)");
+
+    return 0;
+}
+
+int lsm6dsox_configure_crash_params(void) {
+    LOG_INF("Configuring crash params...");
+    
+    CONFIGURE_REGS(lsm6dsox_write_reg,
+                   {LSM6DSOX_CTRL1_XL, ODR_XL_416Hz | FS_XL_2g},
+                   {LSM6DSOX_CTRL3_C, 0x44}, 
+                   
+                   {LSM6DSOX_TAP_CFG0, 0x00},  // Disable all tap axes and LIR
+                   {LSM6DSOX_TAP_CFG2, 0x00},  // Disable tap interrupts
+                   
+                   {LSM6DSOX_WAKE_UP_THS, CRASH_THRESHOLD_WAKEUP}, 
+                   {LSM6DSOX_WAKE_UP_DUR, 0x00});
 
     return 0;
 }
@@ -123,20 +154,22 @@ void lsm6dsox_clear_interrupts(void) {
     uint8_t dummy;
     lsm6dsox_read_reg(LSM6DSOX_ALL_INT_SRC, &dummy);
     lsm6dsox_read_reg(LSM6DSOX_TAP_SRC, &dummy);
-    LOG_DBG("Interrupts cleared on boot");
+    lsm6dsox_read_reg(LSM6DSOX_WAKE_UP_SRC, &dummy);
 }
 
 int lsm6dsox_init(void) {
-    if (!device_is_ready(dev.bus)) {
-        return -ENODEV;
-    }
-
+    if (!device_is_ready(dev.bus)) return -ENODEV;
+    LOG_INF("Initializing LSM6DSOX...");
     TRY_ERR(int, lsm6dsox_verify_device());
-    TRY_ERR(int, lsm6dsox_configure_tap());
-    TRY_ERR(int, lsm6dsox_configure_gyro());
 
+    // IMPORTANT: Reset the device to clear any stuck interrupts from previous boot
+    lsm6dsox_update_reg(LSM6DSOX_CTRL3_C, 0x01, 0x01);
+    k_busy_wait(10000);
+
+    // Reset BDU/IF_INC after reset
+    lsm6dsox_write_reg(LSM6DSOX_CTRL3_C, 0x44);
+
+    TRY_ERR(int, lsm6dsox_configure_gyro()); // Gyro is always on
     lsm6dsox_clear_interrupts();
-
-    LOG_INF("tap detection configured");
     return 0;
 }

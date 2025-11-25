@@ -2,13 +2,127 @@
 #include "robot/calibration.h"
 #include "robot/sensors/lis3mdl.h"
 #include "robot/sensors/lsm6dsox.h"
+#include "robot/sensors/int1_gpio.h"
+#include "robot/sensors/tap_detect.h"
 #include "ses_assignment.h"
 #include <math.h>
 #include <mergebot.h>
+#include "robot/sensors/crash_detect.h"
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(robot, LOG_LEVEL_DBG);
+
+#define INT1_GPIO_NODE DT_NODELABEL(gpio0)
+#define INT1_PIN 12
+
+struct gpio_int_handle int1_handle;
+
+static const struct gpio_dt_spec int1_gpio = {
+    .port = DEVICE_DT_GET(INT1_GPIO_NODE), 
+    .pin = INT1_PIN, 
+    .dt_flags = GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN
+};
+
+static robot_imu_mode_t current_mode = IMU_MODE_OFF;
+static void internal_crash_callback(bool moving_forward);
+
+static void default_gpio_callback(gpio_pin_t pin, void *user_data) {
+    ARG_UNUSED(pin);
+    ARG_UNUSED(user_data);
+}
+
+void robot_set_imu_mode(robot_imu_mode_t new_mode) {
+    if (current_mode == new_mode) return;
+    k_cpu_idle();
+    gpio_int_disable(&int1_handle); /* prevent race condition */
+
+    switch (current_mode) {
+        case IMU_MODE_TAP:
+            tap_detect_deinit();
+            break;
+        case IMU_MODE_CRASH:
+            crash_detect_deinit();
+            break;
+        case IMU_MODE_OFF:
+        default:
+            break;
+    }
+
+    k_busy_wait(1000);
+    lsm6dsox_clear_interrupts();
+    const struct device *port = int1_handle.gpio_spec.port;
+    gpio_pin_t pin = int1_handle.gpio_spec.pin;
+
+    gpio_pin_interrupt_configure(port, pin, GPIO_INT_DISABLE);
+    k_busy_wait(100);
+    switch (new_mode) {
+        case IMU_MODE_TAP:
+            if (tap_detect_init() != 0) {
+                LOG_ERR("Failed to enable TAP mode");
+            }
+            break;
+        case IMU_MODE_CRASH:
+            if (crash_detect_init(internal_crash_callback) != 0) {
+                LOG_ERR("Failed to enable CRASH mode");
+            }
+            crash_detect_set_active(true, true);
+            break;
+        case IMU_MODE_OFF:
+        default:
+            break;
+    }
+    lsm6dsox_clear_interrupts();
+
+    gpio_int_enable(&int1_handle);
+    current_mode = new_mode;
+    LOG_INF("IMU Mode Switched to: %d", new_mode);
+}
+
+static int robot_gpio_init(void) {
+    if (!gpio_is_ready_dt(&int1_gpio)) {
+        return -ENODEV;
+    }
+
+    TRY_ERR(int, gpio_pin_configure_dt(&int1_gpio, GPIO_INPUT | int1_gpio.dt_flags));
+    TRY_ERR(int, gpio_int_init_dt(&int1_handle, 
+                               &int1_gpio, 
+                               GPIO_INT_EDGE_RISING, 
+                               default_gpio_callback, 
+                               NULL));
+    return 0;
+}
+
+int robot_init(void){
+    TRY_ERR(int, lsm6dsox_init());
+    TRY_ERR(int, robot_gpio_init());
+    TRY_ERR(int, lis3mdl_init());
+    TRY_ERR(int, calibration_init(CALIBRATION_RESET));
+
+    LOG_INF("Robot ready");
+    return 0;
+}
+
+static void internal_crash_callback(bool was_forward) {
+    mb_drive(0, 0);
+    k_sleep(K_MSEC(CRASH_WAIT_MS));
+
+    int16_t backup_speed = SPEED / 2;
+    if (was_forward) {
+        mb_drive(-backup_speed, -backup_speed);
+    } else {
+        mb_drive(backup_speed, backup_speed);
+    }
+    k_sleep(K_MSEC(CRASH_BACKUP_TIME_MS));
+
+    mb_drive(0, 0);
+
+    robot_set_status(STATUS_CRASH);
+
+    while (1) {
+        k_sleep(K_FOREVER);
+    }
+}
 
 static float normalize_angle_diff(float angle) {
     while (angle > 180.0f)
@@ -24,6 +138,7 @@ float robot_calculate_heading(void) {
     double x_sum = 0.0;
     double y_sum = 0.0;
     
+    // TODO: use exponential moving average or calibration to deal with the randomness, this is really inefficient
     for (int i = 0; i < 100; i++) {
         TRY_ERR(int, lis3mdl_read_mag(&mag_data));
         
@@ -47,7 +162,8 @@ float robot_calculate_heading(void) {
     double x_rotated = x_corr_counts * cos_a - y_corr_counts * sin_a;
     double y_rotated = x_corr_counts * sin_a + y_corr_counts * cos_a;
     
-    double heading = atan2(y_rotated, x_rotated) * 180.0 / M_PI; // degrees
+    //double heading = atan2(y_rotated, x_rotated) * 180.0 / M_PI; // degrees
+    double heading = atan2(y_corr_counts, x_corr_counts) * 180.0 / M_PI;
     float heading_deg = normalize_angle_diff((float)heading);
     
     LOG_DBG("Heading: %.1f (x:%.3f y:%.3f, rotated x:%.3f y:%.3f)",
@@ -56,7 +172,6 @@ float robot_calculate_heading(void) {
     return heading_deg;
 }
 
-
 void robot_move(int32_t distance_mm) {
     if (distance_mm == 0)
         return;
@@ -64,6 +179,8 @@ void robot_move(int32_t distance_mm) {
     bool forward = (distance_mm > 0);
     int32_t target_distance = abs(distance_mm);
     uint32_t duration_ms = (uint32_t)((float)target_distance / MM_PER_MS_DRIVE);
+
+    crash_detect_set_active(true, forward);
 
     int64_t start_time = k_uptime_get();
     int16_t base_speed = SPEED;
@@ -90,6 +207,8 @@ void robot_move(int32_t distance_mm) {
         
         k_sleep(K_MSEC(5));
     }
+
+    crash_detect_set_active(false, false);
     
     if (forward) {
         mb_drive(-SPEED, -SPEED);

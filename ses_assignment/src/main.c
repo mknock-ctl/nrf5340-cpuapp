@@ -11,6 +11,7 @@
 #include "robot/sensors/lis3mdl.h"
 #include "robot/sensors/lsm6dsox.h"
 #include "robot/sensors/tap_detect.h"
+#include "robot/sensors/crash_detect.h"
 #include "ses_assignment.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
@@ -37,10 +38,13 @@ static void led_indicator_callback(int index) {
 }
 
 static void wait_for_double_tap(void) {
+    robot_set_imu_mode(IMU_MODE_TAP);
     LOG_INF("Waiting for double tap...");
+
     while (!tap_detect_wait(K_MSEC(TAP_TIMEOUT_MS))) {
         power_update_indicator();
     }
+    robot_set_imu_mode(IMU_MODE_OFF);
     LOG_INF("Double tap detected!");
 }
 
@@ -48,10 +52,7 @@ int main(void) {
     __ASSERT(init_hardware() == 0, "Failed to initialize robot");
     mb_out_bumper_off();
     mb_leds_off();
-
-    TRY_ERR(int, tap_detect_init());
-    TRY_ERR(int, lis3mdl_init());
-    TRY_ERR(int, calibration_init(CALIBRATION_RESET));
+    robot_init();
 
     if (calibration_needed()) {
         LOG_INF("Calibration required bro, double tap to start.");
@@ -60,7 +61,6 @@ int main(void) {
         calibration_sequence(TURNSPEED, drive_callback, led_indicator_callback);
     }
 
-    LOG_INF("Robot ready");
     wait_for_double_tap();
 
     int vcap = mb_measure_vcap();
@@ -72,6 +72,8 @@ int main(void) {
     }
 
     for (;;) {
+        robot_set_imu_mode(IMU_MODE_CRASH);
+        k_sleep(K_MSEC(100));
         robot_turn_to_north();
         robot_move(2000);
         robot_turn(-90); // 90 degrees left
@@ -85,9 +87,10 @@ int main(void) {
         robot_turn(-90);
         robot_move(4000);
         
-
+        robot_set_imu_mode(IMU_MODE_OFF);
+        k_sleep(K_MSEC(20));
         wait_for_double_tap();
-        k_sleep(K_MSEC(200));
+        k_sleep(K_MSEC(20));
     }
 
     UNREACHABLE();

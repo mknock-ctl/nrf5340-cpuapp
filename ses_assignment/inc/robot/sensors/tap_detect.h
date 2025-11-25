@@ -11,6 +11,6 @@ typedef enum { TAP_NONE, TAP_SINGLE, TAP_DOUBLE } tap_event_t;
 
 int tap_detect_init(void);
 bool tap_detect_wait(k_timeout_t timeout);
-void tap_detect_ignore(bool ignore);
+int tap_detect_deinit(void);
 
 #endif

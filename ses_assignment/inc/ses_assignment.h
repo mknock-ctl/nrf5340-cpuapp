@@ -11,11 +11,11 @@
 #define CALIBRATION_RESET false
 #define TAP_TIMEOUT_MS 100
 
-#define SPEED 100
 #define TURNSPEED 100
 #define MIN_SPEED 30
 #define KP 3.0f
 #define MM_PER_MS_DRIVE (3500.0f / 2000.0f) // calibrated via g_drive_avg_duration_ms
+#define SPEED 100
 
 #define HEADING_OFFSET_DEG 0.0f
 
@@ -25,6 +25,8 @@
 
 #define ROBOT_HEADING_NORTH 0.0f
 #define HEADING_ALPHA 0.3
+#define CRASH_BACKUP_TIME_MS 1000
+#define CRASH_WAIT_MS 250
 
 #define VCAP_MAX 3000
 #define VCAP_MIN 600
