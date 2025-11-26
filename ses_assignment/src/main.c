@@ -15,6 +15,7 @@
 #include "ses_assignment.h"
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
+static K_SEM_DEFINE(tap_sem, 0, 1);
 
 int init_hardware(void) {
     LOG_INF("Initializing hardware...");
@@ -37,15 +38,34 @@ static void led_indicator_callback(int index) {
     }
 }
 
+static void tap_callback(void) {
+    k_sem_give(&tap_sem);
+}
+
 static void wait_for_double_tap(void) {
     robot_set_imu_mode(IMU_MODE_TAP);
-    LOG_INF("Waiting for double tap...");
-
-    while (!tap_detect_wait(K_MSEC(TAP_TIMEOUT_MS))) {
-        power_update_indicator();
-    }
+    tap_detect_register_callback(tap_callback);
+    LOG_INF("Waiting for double tap");
+    
+    k_sem_take(&tap_sem, K_FOREVER);
+    
     robot_set_imu_mode(IMU_MODE_OFF);
-    LOG_INF("Double tap detected!");
+    LOG_INF("Double tap detected");
+}
+
+static void follow_predefined_path(void) {    
+    robot_turn_to_north();
+    robot_move(2000);
+    robot_turn(-90); // 90 degrees left
+    robot_move(2000);
+    robot_turn(90);
+    robot_move(2000);
+    robot_turn(90);
+    robot_move(2000);
+    robot_turn(-180);
+    robot_move(-2000);
+    robot_turn(-90);
+    robot_move(4000);        
 }
 
 int main(void) {
@@ -68,29 +88,58 @@ int main(void) {
 
     for (int i = 0; i < 3; i++) {
         mb_led_toggle(MB_LED_G);
-        k_sleep(K_MSEC(200));
+        k_sleep(K_MSEC(400));
     }
 
     for (;;) {
-        robot_set_imu_mode(IMU_MODE_CRASH);
-        k_sleep(K_MSEC(100));
-        robot_turn_to_north();
-        robot_move(2000);
-        robot_turn(-90); // 90 degrees left
-        robot_move(2000);
-        robot_turn(90);
-        robot_move(2000);
-        robot_turn(90);
-        robot_move(2000);
-        robot_turn(-180);
-        robot_move(-2000);
-        robot_turn(-90);
-        robot_move(4000);
         
+        robot_set_imu_mode(IMU_MODE_CRASH);
+        k_sleep(K_MSEC(200));
+        follow_predefined_path();
+
         robot_set_imu_mode(IMU_MODE_OFF);
-        k_sleep(K_MSEC(20));
         wait_for_double_tap();
-        k_sleep(K_MSEC(20));
+        for (int i = 0; i < 3; i++) {
+            mb_led_toggle(MB_LED_G);
+            k_sleep(K_MSEC(400));
+        }
+
+
+        /*
+        double x_raw_d, y_raw_d;
+        lis3mdl_data_t mag_data;
+        TRY_ERR(int, lis3mdl_read_mag(&mag_data));
+
+        int32_t x_raw = mag_data.x;
+        int32_t y_raw = mag_data.y;
+
+        x_raw_d = (double)x_raw;
+        y_raw_d = (double)y_raw;
+
+        double x = x_raw_d;
+        double y = y_raw_d;
+
+        double x1 = x_raw_d - (double)g_mag_offset_x;
+        double y1 = y_raw_d - (double)g_mag_offset_y;
+
+        double x2 = (x_raw_d - (double)g_mag_offset_x) * (double)g_mag_scale_x;
+        double y2 = (y_raw_d - (double)g_mag_offset_y) * (double)g_mag_scale_y;
+
+        LOG_INF("(raw x:%.3f y:%.3f), (off x1:%.3f y1:%.3f), (corr x2:%.3f y2:%.3f)",
+                x, y, x1, y1, x2, y2);
+
+        double heading  = atan2(x, y) * 180.0 / M_PI;
+        double heading1 = atan2(x1, y1) * 180.0 / M_PI;
+        double heading2 = atan2(x2, y2) * 180.0 / M_PI;
+
+        if (heading < 0)  heading += 360.0;
+        if (heading1 < 0) heading1 += 360.0;
+        if (heading2 < 0) heading2 += 360.0;
+
+        LOG_INF("(h:%.3f), (h1:%.3f), (h2:%.3f), (h3: %.3f)", heading, heading1, heading2, robot_calculate_heading());
+
+        k_sleep(K_MSEC(500));*/
+
     }
 
     UNREACHABLE();

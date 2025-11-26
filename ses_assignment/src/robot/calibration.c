@@ -32,6 +32,11 @@ int calibration_init(bool reset) {
             settings_init_and_register("calibration", robot_settings, ARRAY_SIZE(robot_settings)));
 
     if (reset) {
+
+        LOG_INF("Booted. Bias: %.3f, MS/Deg: %.3f, magx: %.3f, maxy: %.3f,", (double)g_gyro_bias_z,
+                (double)g_ms_per_degree, (double)g_mag_offset_x, (double)g_mag_offset_y);
+        LOG_INF("Booted 2. MagScaleX: %.3f, MagScaleY: %.3f, DriveAvgDur: %.3f", (double)g_mag_scale_x,
+                (double)g_mag_scale_y, (double)g_drive_avg_duration_ms);
         const float g_reset = 0.0f;
         settings_save_float("calibration/ms_per_deg", g_reset);
         g_ms_per_degree = 0.0f;
@@ -45,6 +50,7 @@ int calibration_init(bool reset) {
         g_mag_offset_x = -1.0f;
         g_mag_offset_y = -1.0f;
         /* The scales change with the offsets */
+        return 0;
     }
 
     LOG_INF("Booted. Bias: %.3f, MS/Deg: %.3f, magx: %.3f, maxy: %.3f,", (double)g_gyro_bias_z,
@@ -160,7 +166,7 @@ static void calibrate_magnetometer_sequence(uint32_t duration_ms,
     lis3mdl_data_t data;
     int sample_count = 0;
 
-    drive_func(TURNSPEED, -TURNSPEED);
+    drive_func(MIN_SPEED, -MIN_SPEED);
     uint32_t start_time = k_uptime_get_32();
 
     if (led_func) {
@@ -168,7 +174,7 @@ static void calibrate_magnetometer_sequence(uint32_t duration_ms,
     }
 
     float x_filtered = 0.0f, y_filtered = 0.0f;
-    const float alpha = 0.1f;
+    const float alpha = 0.9f;
     bool initialized = false;
 
     while (k_uptime_get_32() - start_time < duration_ms) {
@@ -271,6 +277,6 @@ static float distance_calibration_sequence(int16_t speed, uint32_t duration_ms,
 void calibration_sequence(int16_t speed, void (*drive_func)(int16_t, int16_t),
                           void (*led_func)(int)) {
     gyro_calibration_sequence(speed, 2000, drive_func, led_func);
-    calibrate_magnetometer_sequence(10000, drive_func, led_func);
-    distance_calibration_sequence(speed, 2000, drive_func, led_func);
+    calibrate_magnetometer_sequence(30000, drive_func, led_func);
+    //distance_calibration_sequence(speed, 2000, drive_func, led_func);
 }

@@ -9,11 +9,7 @@
 typedef void (*crash_handler_t)(bool moving_forward);
 
 int crash_detect_init(crash_handler_t handler);
-
 void crash_detect_set_active(bool active, bool forward);
-
-bool crash_detect_check(void);
-
 int crash_detect_deinit(void);
 
 #endif

@@ -58,8 +58,27 @@ int lsm6dsox_route_int1(uint8_t bit_mask, bool enable) {
                                enable ? bit_mask : 0);
 }
 
+int lsm6dsox_reset_embedded_functions(void) {
+    // Disable the master interrupt engine first to stop any firing
+    lsm6dsox_write_reg(LSM6DSOX_TAP_CFG2, 0x00);
+    
+    // Clear all other related configuration registers
+    lsm6dsox_write_reg(LSM6DSOX_TAP_CFG0, 0x00);
+    lsm6dsox_write_reg(LSM6DSOX_TAP_CFG1, 0x00);
+    lsm6dsox_write_reg(LSM6DSOX_TAP_THS_6D, 0x00);
+    lsm6dsox_write_reg(LSM6DSOX_INT_DUR2, 0x00);
+    lsm6dsox_write_reg(LSM6DSOX_WAKE_UP_THS, 0x00);
+    lsm6dsox_write_reg(LSM6DSOX_WAKE_UP_DUR, 0x00);
+    lsm6dsox_write_reg(LSM6DSOX_MD1_CFG, 0x00); // Disconnect INT1 routing
+
+    // Clear any pending interrupts
+    lsm6dsox_clear_interrupts();
+    return 0;
+}
+
 int lsm6dsox_configure_tap_params(void) {
     LOG_INF("Configuring tap detection...");
+    lsm6dsox_reset_embedded_functions();
 
     CONFIGURE_REGS(lsm6dsox_write_reg,
                    // Setup ODR and Range
@@ -104,16 +123,21 @@ int lsm6dsox_configure_tap_params(void) {
 
 int lsm6dsox_configure_crash_params(void) {
     LOG_INF("Configuring crash params...");
-    
+
+    lsm6dsox_reset_embedded_functions();
+
     CONFIGURE_REGS(lsm6dsox_write_reg,
+                   // Basic setup
                    {LSM6DSOX_CTRL1_XL, ODR_XL_416Hz | FS_XL_2g},
                    {LSM6DSOX_CTRL3_C, 0x44}, 
                    
-                   {LSM6DSOX_TAP_CFG0, 0x00},  // Disable all tap axes and LIR
-                   {LSM6DSOX_TAP_CFG2, 0x00},  // Disable tap interrupts
-                   
+                   {LSM6DSOX_TAP_CFG0, 0x00}, 
+
                    {LSM6DSOX_WAKE_UP_THS, CRASH_THRESHOLD_WAKEUP}, 
-                   {LSM6DSOX_WAKE_UP_DUR, 0x00});
+
+                   {LSM6DSOX_WAKE_UP_DUR, 0x02},
+
+                   {LSM6DSOX_TAP_CFG2, TAP_INTERRUPTS_ENABLE});
 
     return 0;
 }
