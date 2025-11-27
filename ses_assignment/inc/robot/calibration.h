@@ -12,6 +12,8 @@ extern float g_mag_offset_x;
 extern float g_mag_offset_y;
 extern float g_mag_scale_x, g_mag_scale_y;
 
+extern float g_accel_bias_x;
+
 int calibration_init(bool reset);
 bool calibration_needed(void);
 void calibration_sequence(int16_t speed, void (*drive_func)(int16_t, int16_t),

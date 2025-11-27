@@ -187,6 +187,18 @@ int lsm6dsox_configure_gyro(void) {
     return 0;
 }
 
+int lsm6dsox_accel_set_odr(bool active) {
+    if (active) {
+        // Set ODR to 416Hz, 2g scale (High Performance)
+        return lsm6dsox_update_reg(LSM6DSOX_CTRL1_XL, 
+                                 0xF0, // Mask for ODR
+                                 ODR_XL_416Hz | FS_XL_2g);
+    } else {
+        // Power down accelerometer (ODR = 0)
+        return lsm6dsox_update_reg(LSM6DSOX_CTRL1_XL, 0xF0, 0x00);
+    }
+}
+
 int lsm6dsox_read_gyro(lsm6dsox_gyro_data_t *data) {
     if (!device_is_ready(dev.bus)) {
         return -ENODEV;

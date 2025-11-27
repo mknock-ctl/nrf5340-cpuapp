@@ -71,6 +71,7 @@ void robot_set_imu_mode(robot_imu_mode_t new_mode) {
             break;
         case IMU_MODE_CRASH:
             crash_detect_deinit();
+            motion_verify_deinit();
             break;
         case IMU_MODE_MOTION_VERIFY:
             motion_verify_deinit();
@@ -94,6 +95,7 @@ void robot_set_imu_mode(robot_imu_mode_t new_mode) {
             }
             lsm6dsox_clear_interrupts();
             k_sem_reset(&crash_sem);
+            motion_verify_init();
             break;
         case IMU_MODE_MOTION_VERIFY:
             if (motion_verify_init() != 0) {
@@ -167,13 +169,9 @@ void robot_move(int32_t distance_mm) {
     
     LOG_INF("Target ticks: %d", target_ticks);
 
-    if (current_mode == IMU_MODE_MOTION_VERIFY) {
-        motion_verify_start(forward);
-    }
-    else {
-        crash_detect_set_active(true, forward);
-        k_sem_reset(&crash_sem);
-    }
+    //motion_verify_start(forward);
+    crash_detect_set_active(true, forward);
+    k_sem_reset(&crash_sem);
     
     k_sleep(K_MSEC(50));
 
@@ -204,11 +202,8 @@ void robot_move(int32_t distance_mm) {
         k_sleep(K_MSEC(10));
     }
 
-    if (current_mode == IMU_MODE_MOTION_VERIFY) {
-        motion_verify_stop();
-    } else {
-        crash_detect_set_active(false, false);
-    }
+   // motion_verify_stop();
+    crash_detect_set_active(false, false);
     mb_drive(forward ? -SPEED : SPEED, forward ? -SPEED : SPEED);
     k_sleep(K_MSEC(25));
     mb_drive(0, 0);

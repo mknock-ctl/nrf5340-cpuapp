@@ -92,6 +92,7 @@ int lsm6dsox_read_accel_raw(int16_t *x, int16_t *y, int16_t *z);
 int lsm6dsox_configure_tap_params(void);
 int lsm6dsox_configure_crash_params(void);
 int lsm6dsox_configure_gyro(void);
+int lsm6dsox_accel_set_odr(bool active);
 
 float lsm6dsox_gyro_to_dps(int16_t raw_value);
 int lsm6dsox_read_gyro(lsm6dsox_gyro_data_t *data);
