@@ -83,26 +83,27 @@ int main(void) {
 
     wait_for_double_tap();
 
-    int vcap = mb_measure_vcap();
-    LOG_INF("Battery: %4dmV", vcap);
-
     for (int i = 0; i < 3; i++) {
         mb_led_toggle(MB_LED_G);
         k_sleep(K_MSEC(400));
     }
 
+    robot_set_imu_mode(IMU_MODE_CRASH);
+    robot_move(2000);
+
+
     for (;;) {
         
-        robot_set_imu_mode(IMU_MODE_CRASH);
-        k_sleep(K_MSEC(200));
-        follow_predefined_path();
+        // robot_set_imu_mode(IMU_MODE_CRASH);
+        // k_sleep(K_MSEC(200));
+        // follow_predefined_path();
 
-        robot_set_imu_mode(IMU_MODE_OFF);
-        wait_for_double_tap();
-        for (int i = 0; i < 3; i++) {
-            mb_led_toggle(MB_LED_G);
-            k_sleep(K_MSEC(400));
-        }
+        // robot_set_imu_mode(IMU_MODE_OFF);
+        // wait_for_double_tap();
+        // for (int i = 0; i < 3; i++) {
+        //     mb_led_toggle(MB_LED_G);
+        //     k_sleep(K_MSEC(400));
+        // }
 
 
         /*

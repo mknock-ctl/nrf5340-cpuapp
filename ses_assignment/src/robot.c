@@ -137,7 +137,7 @@ float robot_calculate_heading(void) {
     double x_avg = x_sum / 100.0;
     double y_avg = y_sum / 100.0;
     double heading = atan2(x_avg, y_avg) * 180.0 / M_PI;
-    
+
     return (float)heading;
 }
 
@@ -148,34 +148,41 @@ void robot_move(int32_t distance_mm) {
 
     bool forward = (distance_mm > 0);
     int32_t target_distance = abs(distance_mm);
-    uint32_t duration_ms = (uint32_t)((float)target_distance / MM_PER_MS_DRIVE);
+    
+    // Calculate target ticks: (distance / circumference) * ticks_per_rev
+    float circumference = M_PI * WHEEL_DIAMETER_MM;
+    int32_t target_ticks = (int32_t)((target_distance / circumference) * TICKS_PER_REV);
+    
+    LOG_INF("Target ticks: %d", target_ticks);
 
     crash_detect_set_active(true, forward);
     k_sem_reset(&crash_sem);
     k_sleep(K_MSEC(50));
 
-    int64_t start_time = k_uptime_get();
-    int16_t base_speed = SPEED;
+    int32_t start_left, start_right;
+    mb_angle(&start_left, &start_right);
+    
+    int32_t current_avg_ticks = 0;
 
-    while (true) {
+    mb_drive(forward ? SPEED_LEFT : -SPEED_LEFT, 
+             forward ? SPEED_RIGHT : -SPEED_RIGHT);
+
+    while (current_avg_ticks < target_ticks) {
         if (k_sem_take(&crash_sem, K_NO_WAIT) == 0) {
             crash_detect_set_active(false, false);
             crash_recovery_routine();
             UNREACHABLE();
         }
 
-        int64_t elapsed = k_uptime_get() - start_time;
-        if (elapsed >= duration_ms) break;
-
-        float distance_remaining = (duration_ms - elapsed) * MM_PER_MS_DRIVE;
-        int16_t current_speed = (int16_t)(distance_remaining * KP);
+        int32_t current_left, current_right;
+        mb_angle(&current_left, &current_right);
         
-        if (current_speed > base_speed) current_speed = base_speed;
-        if (current_speed < MIN_SPEED) current_speed = MIN_SPEED;
-
-        mb_drive(forward ? current_speed : -current_speed, 
-                 forward ? current_speed : -current_speed);
-        k_sleep(K_MSEC(5));
+        int32_t delta_left = abs(current_left - start_left);
+        int32_t delta_right = abs(current_right - start_right);
+        
+        current_avg_ticks = (delta_left + delta_right) / 2;        
+                 
+        k_sleep(K_MSEC(10));
     }
 
     crash_detect_set_active(false, false);
@@ -230,41 +237,46 @@ void robot_turn(int32_t angle_deg) {
 void robot_turn_to_north(void) {
     LOG_INF("Turning to North");
     uint32_t start_time = k_uptime_get_32();
-    int attempts = 0;
+    int consecutive_success = 0;
 
     while (true) {
         if ((k_uptime_get_32() - start_time) > TURN_TIMEOUT_MS) {
             LOG_ERR("Timeout reached");
             break;
         }
-        if (attempts >= MAX_TURN_ATTEMPTS) {
-            LOG_WRN("Max attempts reached");
-            break;
-        }
 
-        k_sleep(K_MSEC(1000));
         float current_heading = robot_calculate_heading();
-        float delta_angle = normalize_angle_diff(ROBOT_HEADING_NORTH - current_heading);
+        float error = normalize_angle_diff(ROBOT_HEADING_NORTH - current_heading);
 
-        if (fabsf(delta_angle) <= HEADING_TOLERANCE) {
-            LOG_INF("Aligned to North");
-            break;
+        LOG_DBG("Heading: %.2f, Error: %.2f", (double)current_heading, (double)error);
+
+        if (fabsf(error) <= ALIGN_TOLERANCE) {
+            consecutive_success++;
+            if (consecutive_success >= 3) { // Ensure stability
+                LOG_INF("Aligned to North");
+                break;
+            }
+        } else {
+            consecutive_success = 0;
         }
-        int32_t turn_angle = 0;
 
-        if (fabsf(delta_angle) <= 60.0f) {
-            turn_angle = (int32_t)roundf(delta_angle * 0.5f);            
-        } else { 
-            turn_angle = (int32_t)roundf(delta_angle * 0.9f);
-        }
+        int16_t turn_speed = (int16_t)(error * KP_ALIGN);
+        
+        // Clamp speed to max TURNSPEED
+        if (turn_speed > TURNSPEED) turn_speed = TURNSPEED;
+        if (turn_speed < -TURNSPEED) turn_speed = -TURNSPEED;
+        
+        // Ensure minimum speed to overcome friction
+        if (turn_speed > 0 && turn_speed < MIN_SPEED) turn_speed = MIN_SPEED;
+        if (turn_speed < 0 && turn_speed > -MIN_SPEED) turn_speed = -MIN_SPEED;
 
-        LOG_INF("Current Heading: %.2f deg, Delta: %.2f deg",
-                (double)current_heading, (double)turn_angle);
-
-        robot_turn(-turn_angle);
-        k_sleep(K_MSEC(500));
-        attempts++;
+        // mb_drive(-turn_speed, turn_speed);
+        LOG_INF("Heading: %.2f, Error: %.2f, Speed: %d", (double)current_heading, (double)error, turn_speed);
+        k_sleep(K_MSEC(50)); // Update rate
     }
+
+    mb_drive(0, 0);
+    k_sleep(K_MSEC(100));
 }
 
 void robot_set_status(robot_status_t status) {
