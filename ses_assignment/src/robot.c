@@ -4,6 +4,7 @@
 #include "robot/sensors/int1_gpio.h"
 #include "robot/sensors/lis3mdl.h"
 #include "robot/sensors/lsm6dsox.h"
+#include "robot/sensors/motion_verify.h"
 #include "robot/sensors/tap_detect.h"
 #include "ses_assignment.h"
 #include "mergebot.h"
@@ -60,6 +61,7 @@ static void crash_recovery_routine(void) {
         k_sleep(K_FOREVER);
     }
 }
+
 void robot_set_imu_mode(robot_imu_mode_t new_mode) {
     if (current_mode == new_mode) return;
 
@@ -70,12 +72,16 @@ void robot_set_imu_mode(robot_imu_mode_t new_mode) {
         case IMU_MODE_CRASH:
             crash_detect_deinit();
             break;
+        case IMU_MODE_MOTION_VERIFY:
+            motion_verify_deinit();
+            break;
         default:
             break;
     }
 
     k_sleep(K_MSEC(10));
 
+    // Initialize new mode
     switch (new_mode) {
         case IMU_MODE_TAP:
             if (tap_detect_init() != 0) {
@@ -88,6 +94,11 @@ void robot_set_imu_mode(robot_imu_mode_t new_mode) {
             }
             lsm6dsox_clear_interrupts();
             k_sem_reset(&crash_sem);
+            break;
+        case IMU_MODE_MOTION_VERIFY:
+            if (motion_verify_init() != 0) {
+                LOG_ERR("Failed to enable MOTION_VERIFY mode");
+            }
             break;
         default:
             break;
@@ -112,6 +123,7 @@ int robot_init(void) {
     TRY_ERR(int, robot_gpio_init());
     TRY_ERR(int, lis3mdl_init());
     TRY_ERR(int, calibration_init(CALIBRATION_RESET));
+    TRY_ERR(int, motion_verify_init());
     LOG_INF("Robot ready");
     return 0;
 }
@@ -155,8 +167,14 @@ void robot_move(int32_t distance_mm) {
     
     LOG_INF("Target ticks: %d", target_ticks);
 
-    crash_detect_set_active(true, forward);
-    k_sem_reset(&crash_sem);
+    if (current_mode == IMU_MODE_MOTION_VERIFY) {
+        motion_verify_start(forward);
+    }
+    else {
+        crash_detect_set_active(true, forward);
+        k_sem_reset(&crash_sem);
+    }
+    
     k_sleep(K_MSEC(50));
 
     int32_t start_left, start_right;
@@ -168,12 +186,13 @@ void robot_move(int32_t distance_mm) {
              forward ? SPEED_RIGHT : -SPEED_RIGHT);
 
     while (current_avg_ticks < target_ticks) {
-        if (k_sem_take(&crash_sem, K_NO_WAIT) == 0) {
-            crash_detect_set_active(false, false);
-            crash_recovery_routine();
-            UNREACHABLE();
+        if (current_mode != IMU_MODE_MOTION_VERIFY) {
+            if (k_sem_take(&crash_sem, K_NO_WAIT) == 0) {
+                crash_detect_set_active(false, false);
+                crash_recovery_routine();
+                UNREACHABLE();
+            }
         }
-
         int32_t current_left, current_right;
         mb_angle(&current_left, &current_right);
         
@@ -185,7 +204,11 @@ void robot_move(int32_t distance_mm) {
         k_sleep(K_MSEC(10));
     }
 
-    crash_detect_set_active(false, false);
+    if (current_mode == IMU_MODE_MOTION_VERIFY) {
+        motion_verify_stop();
+    } else {
+        crash_detect_set_active(false, false);
+    }
     mb_drive(forward ? -SPEED : SPEED, forward ? -SPEED : SPEED);
     k_sleep(K_MSEC(25));
     mb_drive(0, 0);

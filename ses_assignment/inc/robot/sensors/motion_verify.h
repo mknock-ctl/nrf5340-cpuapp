@@ -1,21 +1,23 @@
 #ifndef MOTION_VERIFY_H
 #define MOTION_VERIFY_H
 
-#include <stdbool.h>
 #include <stdint.h>
-
-#define LSM6DSOX_OUTX_L_A 0x28
+#include <stdbool.h>
 
 typedef enum {
-    MOTION_OK = 0,
-    MOTION_FAST,
-    MOTION_SLOW
+    MOTION_STATUS_OK,          // Green: Normal operation
+    MOTION_STATUS_FAST,        // Blue: Accelerometer > Encoders (downhill)
+    MOTION_STATUS_SLOW,        // Yellow: Accelerometer < Encoders (uphill)
+    MOTION_STATUS_CRASH        // Red: Crash detected
 } motion_status_t;
 
-typedef void (*motion_status_handler_t)(motion_status_t status);
 
-int motion_verify_init(motion_status_handler_t handler);
-void motion_verify_set_active(bool active, int16_t expected_speed);
+int motion_verify_init(void);
+void motion_verify_start(bool forward);
+void motion_verify_stop(void);
+
+motion_status_t motion_verify_get_status(void);
+
 int motion_verify_deinit(void);
 
-#endif
+#endif // MOTION_VERIFY_H

@@ -8,7 +8,7 @@
 #define LSM6DSOX_WHO_AM_I 0x0F
 #define LSM6DSOX_WHO_AM_I_VALUE 0x6C
 #define LSM6DSOX_INT1_CTRL 0x0D
-
+#define LSM6DSOX_OUTX_L_A 0x28
 #define LSM6DSOX_CTRL1_XL 0x10
 #define LSM6DSOX_CTRL2_G 0x11
 #define LSM6DSOX_CTRL3_C 0x12
@@ -64,7 +64,7 @@
 
 // WAKE_UP_THS
 #define WAKE_UP_THS_SINGLE_DOUBLE_TAP (1 << 7)
-#define CRASH_THRESHOLD_WAKEUP 0x1C // On ground
+#define CRASH_THRESHOLD_WAKEUP 0x19 // On ground 0x1C
 // #define CRASH_THRESHOLD_WAKEUP 0x19 // On table
 // gyro values
 

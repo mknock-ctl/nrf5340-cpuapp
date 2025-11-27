@@ -63,6 +63,31 @@ int lsm6dsox_verify_device(void) {
     return 0;
 }
 
+int lsm6dsox_read_accel_raw(int16_t *x, int16_t *y, int16_t *z) {
+    if (!x || !y || !z) {
+        return -EINVAL;
+    }
+
+    if (!device_is_ready(dev.bus)) {
+        return -ENODEV;
+    }
+
+    uint8_t buf[6];
+    uint8_t reg = LSM6DSOX_OUTX_L_A;
+
+    TRY_ERR(int, i2c_write_read_dt(&dev, &reg, 1, buf, 6));
+
+    *x = (int16_t)(buf[1] << 8 | buf[0]);
+    *y = (int16_t)(buf[3] << 8 | buf[2]);
+    *z = (int16_t)(buf[5] << 8 | buf[4]);
+
+    return 0;
+}
+
+int lsm6dsox_route_dataready_int1(bool enable) {
+    return lsm6dsox_route_int1(INT1_DRDY_XL, enable);
+}
+
 int lsm6dsox_route_int1(uint8_t bit_mask, bool enable) {
     // This allows multiple interrupts to be OR'd together on INT1
     // or cleanly removed without resetting the whole register.
@@ -114,7 +139,7 @@ int lsm6dsox_configure_tap_params(void) {
                    {LSM6DSOX_TAP_CFG2, TAP_INTERRUPTS_ENABLE},
 
                    // Z Threshold - Balanced sensitivity
-                   {LSM6DSOX_TAP_THS_6D, TAP_THRESHOLD_Z(0x0C)},
+                   {LSM6DSOX_TAP_THS_6D, TAP_THRESHOLD_Z(0x0A)},
 
                    // Single/double-tap selection and wake-up configuration (R/W)
                    {LSM6DSOX_WAKE_UP_THS, WAKE_UP_THS_SINGLE_DOUBLE_TAP | CRASH_THRESHOLD_WAKEUP},

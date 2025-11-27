@@ -1,119 +1,268 @@
+
+#include "robot/sensors/sensor_base.h"
 #include "robot/sensors/motion_verify.h"
+#include "robot/sensors/int1_gpio.h"
 #include "robot/sensors/lsm6dsox.h"
+#include "robot.h"
+#include "mergebot.h"
+#include "ses_assignment.h"
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-#include "ses_assignment.h"
 #include <math.h>
 
 LOG_MODULE_REGISTER(motion_verify, LOG_LEVEL_DBG);
 
-static motion_status_handler_t status_callback = NULL;
-static volatile bool is_active = false;
-static int16_t expected_speed = 0;
-static struct k_timer verify_timer;
-static struct k_work verify_work;
-static motion_status_t last_status = MOTION_OK;
+extern struct gpio_int_handle int1_handle;
 
-#define VELOCITY_THRESHOLD 50.0f
-#define ACCEL_SCALE_2G 0.061f
+#define VELOCITY_COMPARISON_PERIOD_MS 200  /* Compare every 200ms */
+#define VELOCITY_THRESHOLD_PERCENT 20.0f   /* 20% difference triggers status change */
+#define MIN_VELOCITY_THRESHOLD_MM_S 100.0f /* Ignore velocities below this */
 
-typedef struct {
-    int16_t x;
-    int16_t y;
-    int16_t z;
-} accel_data_t;
+typedef struct motion_sensor {
+    sensor_base_t base;
 
-static int read_accelerometer(accel_data_t *data) {
-    uint8_t buf[6];
-    
-    TRY_ERR(int, lsm6dsox_read_multi_reg(LSM6DSOX_OUTX_L_A, buf, sizeof(buf)));
+    volatile bool moving_forward;
+    motion_status_t current_status;
 
-    data->x = (int16_t)(buf[1] << 8 | buf[0]);
-    data->y = (int16_t)(buf[3] << 8 | buf[2]);
-    data->z = (int16_t)(buf[5] << 8 | buf[4]);
+    int32_t last_encoder_left;
+    int32_t last_encoder_right;
+    int64_t last_time_ms;
 
-    return 0;
+    float accel_velocity_ms;
+    int64_t last_accel_time_ms;
+
+    struct k_work motion_verify_work;
+    struct k_timer comparison_timer;
+} motion_sensor_t;
+
+static motion_sensor_t g_motion = {
+    .base = {
+        .name = "motion_verify",
+        .ops = NULL,
+        .gpio = NULL,
+        .gpio_handle = &int1_handle
+    },
+    .moving_forward = false,
+    .current_status = MOTION_STATUS_OK,
+    .last_encoder_left = 0,
+    .last_encoder_right = 0,
+    .last_time_ms = 0,
+    .accel_velocity_ms = 0.0f,
+    .last_accel_time_ms = 0,
+};
+
+static inline float accel_raw_to_ms2(int16_t raw) {
+    return (float)raw * 0.000598f;
 }
 
+static float get_encoder_velocity_mm_s(motion_sensor_t *ms) {
+    int32_t current_left, current_right;
+    mb_angle(&current_left, &current_right);
 
-static void verify_work_handler(struct k_work *work) {
-    if (!is_active || expected_speed == 0) {
+    int64_t current_time = k_uptime_get();
+
+    int64_t dt_ms = current_time - ms->last_time_ms;
+    if (dt_ms <= 0) {
+        /* update encoder snapshot but return 0 to avoid division by zero */
+        ms->last_encoder_left = current_left;
+        ms->last_encoder_right = current_right;
+        ms->last_time_ms = current_time;
+        return 0.0f;
+    }
+
+    int32_t delta_left = current_left - ms->last_encoder_left;
+    int32_t delta_right = current_right - ms->last_encoder_right;
+    int32_t avg_delta_ticks = (delta_left + delta_right) / 2;
+
+    float circumference_mm = M_PI * WHEEL_DIAMETER_MM;
+    float distance_mm = ((float)avg_delta_ticks / (float)TICKS_PER_REV) * circumference_mm;
+
+    float velocity_mm_s = (distance_mm / (float)dt_ms) * 1000.0f;
+
+    ms->last_encoder_left = current_left;
+    ms->last_encoder_right = current_right;
+    ms->last_time_ms = current_time;
+
+    return ms->moving_forward ? velocity_mm_s : -velocity_mm_s;
+}
+
+static void motion_verify_work_handler(struct k_work *work) {
+    motion_sensor_t *ms = CONTAINER_OF(work, motion_sensor_t, motion_verify_work);
+    if (!ms->base.active) return;
+
+    int16_t accel_x, accel_y, accel_z;
+    if (lsm6dsox_read_accel_raw(&accel_x, &accel_y, &accel_z) != 0) {
         return;
     }
 
-    accel_data_t accel;
-    TRY_ERR(int, read_accelerometer(&accel));
+    float accel_ms2 = accel_raw_to_ms2(accel_x);
 
-    float accel_x_ms2 = (float)accel.x * ACCEL_SCALE_2G * 9.81f / 1000.0f;
-    float expected_accel = 0.0f;
-    
-    float accel_magnitude = fabsf(accel_x_ms2);
-    
-    motion_status_t new_status = MOTION_OK;
-    
-    if (expected_speed > 0) {
-        if (accel_x_ms2 > 0.5f) {
-            // (downhill/slip)
-            new_status = MOTION_FAST;
-        } else if (accel_x_ms2 < -0.5f) {
-            // (uphill/drag)
-            new_status = MOTION_SLOW;
-        }
-    } else if (expected_speed < 0) {
-        if (accel_x_ms2 < -0.5f) {
-            new_status = MOTION_FAST;
-        } else if (accel_x_ms2 > 0.5f) {
-            new_status = MOTION_SLOW;
-        }
+    int64_t current_time = k_uptime_get();
+    if (ms->last_accel_time_ms == 0) {
+        ms->last_accel_time_ms = current_time;
+        return;
     }
 
-    // Only trigger callback if status changed
-    if (new_status != last_status) {
-        last_status = new_status;
-        if (status_callback) {
-            LOG_INF("Motion status changed: %d (accel_x: %.2f m/s²)", 
-                    new_status, (double)accel_x_ms2);
-            status_callback(new_status);
+    float dt_s = (current_time - ms->last_accel_time_ms) / 1000.0f;
+    ms->last_accel_time_ms = current_time;
+
+    /* Integrate acceleration to get velocity change (m/s) */
+    ms->accel_velocity_ms += accel_ms2 * dt_s;
+}
+
+static void comparison_timer_callback(struct k_timer *timer) {
+    motion_sensor_t *ms = CONTAINER_OF(timer, motion_sensor_t, comparison_timer);
+    if (!ms->base.active) return;
+
+    float encoder_velocity_mm_s = get_encoder_velocity_mm_s(ms);
+    float accel_velocity_mm_s = ms->accel_velocity_ms * 1000.0f; /* m/s -> mm/s */
+
+    if (fabsf(encoder_velocity_mm_s) < MIN_VELOCITY_THRESHOLD_MM_S) {
+        /* too slow to compare meaningfully */
+        if (ms->current_status != MOTION_STATUS_OK) {
+            ms->current_status = MOTION_STATUS_OK;
+            robot_set_status(STATUS_OK);
+        }
+        return;
+    }
+
+    float velocity_diff = accel_velocity_mm_s - encoder_velocity_mm_s;
+    float percent_diff = (velocity_diff / fabsf(encoder_velocity_mm_s)) * 100.0f;
+
+    LOG_DBG("Encoder: %.1f mm/s, Accel: %.1f mm/s, Diff: %.1f%%",
+            (double)encoder_velocity_mm_s, (double)accel_velocity_mm_s, (double)percent_diff);
+
+    motion_status_t new_status = MOTION_STATUS_OK;
+    if (percent_diff > VELOCITY_THRESHOLD_PERCENT) {
+        new_status = MOTION_STATUS_FAST;
+    } else if (percent_diff < -VELOCITY_THRESHOLD_PERCENT) {
+        new_status = MOTION_STATUS_SLOW;
+    }
+
+    if (new_status != ms->current_status) {
+        ms->current_status = new_status;
+        robot_set_status((robot_status_t)ms->current_status);
+        switch (new_status) {
+        case MOTION_STATUS_OK:
+            LOG_INF("Motion: OK (good traction)");
+            break;
+        case MOTION_STATUS_FAST:
+            LOG_WRN("Motion: FAST (downhill/slip) - Accel %.1f%% faster", (double)percent_diff);
+            break;
+        case MOTION_STATUS_SLOW:
+            LOG_WRN("Motion: SLOW (uphill/resistance) - Accel %.1f%% slower", (double)fabsf(percent_diff));
+            break;
+        default:
+            break;
         }
     }
 }
 
-static void verify_timer_handler(struct k_timer *timer) {
-    k_work_submit(&verify_work);
+static void accel_dataready_isr(gpio_pin_t pin, void *user_data) {
+    ARG_UNUSED(pin);
+    ARG_UNUSED(user_data);
+
+    if (!g_motion.base.active) return;
+
+    k_work_submit(&g_motion.motion_verify_work);
 }
 
-int motion_verify_init(motion_status_handler_t handler) {
-    if (!handler) return -EINVAL;
+static int motion_init(sensor_base_t *s) {
+    motion_sensor_t *ms = CONTAINER_OF(s, motion_sensor_t, base);
 
-    status_callback = handler;
-    is_active = false;
-    last_status = MOTION_OK;
-    
-    k_work_init(&verify_work, verify_work_handler);
-    k_timer_init(&verify_timer, verify_timer_handler, NULL);
-    
+    k_work_init(&ms->motion_verify_work, motion_verify_work_handler);
+    k_timer_init(&ms->comparison_timer, comparison_timer_callback, NULL);
+
+    int ret = gpio_int_register_callback(ms->base.gpio_handle, accel_dataready_isr, NULL);
+    if (ret < 0 && ret != -ENOMEM) {
+        LOG_ERR("Failed to register callback: %d", ret);
+        return ret;
+    }
+
+    ret = lsm6dsox_route_int1(INT1_DRDY_XL, true);
+    if (ret != 0) {
+        LOG_ERR("Failed to route accel DRDY to INT1: %d", ret);
+        if (ret != -ENOMEM) {
+            gpio_int_unregister_callback(ms->base.gpio_handle, accel_dataready_isr);
+        }
+        return ret;
+    }
+
+    ms->current_status = MOTION_STATUS_OK;
+    ms->base.active = false;
     LOG_INF("Motion verification initialized");
     return 0;
 }
 
-void motion_verify_set_active(bool active, int16_t speed) {
-    is_active = active;
-    expected_speed = speed;
-    
-    if (active) {
-        last_status = MOTION_OK;
-        // Sample at 20Hz (every 50ms)
-        k_timer_start(&verify_timer, K_MSEC(50), K_MSEC(50));
-        LOG_DBG("Motion verification activated (speed: %d)", speed);
-    } else {
-        k_timer_stop(&verify_timer);
-        LOG_DBG("Motion verification deactivated");
-    }
+static int motion_deinit(sensor_base_t *s) {
+    motion_sensor_t *ms = CONTAINER_OF(s, motion_sensor_t, base);
+    ms->base.active = false;
+    k_timer_stop(&ms->comparison_timer);
+
+    lsm6dsox_route_int1(INT1_DRDY_XL, false);
+    gpio_int_unregister_callback(ms->base.gpio_handle, accel_dataready_isr);
+
+    LOG_INF("Motion verification deinitialized");
+    return 0;
+}
+
+static int motion_start(sensor_base_t *s, bool forward) {
+    motion_sensor_t *ms = CONTAINER_OF(s, motion_sensor_t, base);
+    LOG_INF("Starting motion verification (forward=%d)", forward ? 1 : 0);
+
+    ms->moving_forward = forward;
+
+    mb_angle(&ms->last_encoder_left, &ms->last_encoder_right);
+    ms->last_time_ms = k_uptime_get();
+
+    ms->accel_velocity_ms = 0.0f;
+    ms->last_accel_time_ms = 0;
+
+    ms->current_status = MOTION_STATUS_OK;
+    robot_set_status(STATUS_OK);
+
+    k_timer_start(&ms->comparison_timer,
+                  K_MSEC(VELOCITY_COMPARISON_PERIOD_MS),
+                  K_MSEC(VELOCITY_COMPARISON_PERIOD_MS));
+
+    ms->base.active = true;
+    return 0;
+}
+
+static void motion_stop(sensor_base_t *s) {
+    motion_sensor_t *ms = CONTAINER_OF(s, motion_sensor_t, base);
+    ms->base.active = false;
+    k_timer_stop(&ms->comparison_timer);
+    LOG_INF("Motion verification stopped");
+}
+
+SENSOR_BASE_DEFINE_OPS(motion) = {
+    .init = motion_init,
+    .deinit = motion_deinit,
+    .start = motion_start,
+    .stop = motion_stop,
+    .irq_enable = NULL,
+};
+
+int motion_verify_init(void) {
+    g_motion.base.ops = &motion_ops;
+    sensor_base_register(&g_motion.base);
+    return sensor_base_init(&g_motion.base);
+}
+
+void motion_verify_start(bool forward) {
+    sensor_base_start(&g_motion.base, forward);
+}
+
+void motion_verify_stop(void) {
+    sensor_base_stop(&g_motion.base);
+}
+
+motion_status_t motion_verify_get_status(void) {
+    return g_motion.current_status;
 }
 
 int motion_verify_deinit(void) {
-    is_active = false;
-    k_timer_stop(&verify_timer);
-    LOG_INF("Motion verification deinitialized");
-    return 0;
+    sensor_base_unregister(&g_motion.base);
+    return sensor_base_deinit(&g_motion.base);
 }

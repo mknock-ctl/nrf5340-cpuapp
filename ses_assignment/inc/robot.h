@@ -8,7 +8,8 @@
 typedef enum {
     IMU_MODE_OFF,
     IMU_MODE_TAP,
-    IMU_MODE_CRASH
+    IMU_MODE_CRASH,
+    IMU_MODE_MOTION_VERIFY 
 } robot_imu_mode_t;
 
 typedef enum {
