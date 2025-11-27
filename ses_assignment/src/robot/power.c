@@ -3,55 +3,25 @@
 #include <mergebot.h>
 #include <stdbool.h>
 
-static power_level_t last_level = POWER_HIGH + 1;
+// https://distrinet.pages.gitlab.kuleuven.be/taskforces/nes/freebot/documentation/events/eums03-embedded-ex2.html
+#define V2E(v) (12 * (v) * (v) / 100000) /* CV^2/2 */
+#define VCAP_MAX 3000                    /* mV */
+#define VCAP_MIN 600                     /* mV */
+#define E_MAX V2E(VCAP_MAX)              /* J */
+#define E_MIN V2E(VCAP_MIN)              /* J */
 
-static int vcap_to_percent(int vcap) {
-    if (vcap >= VCAP_MAX) {
-        return 100;
-    }
-    if (vcap <= VCAP_MIN) {
+static uint8_t vcap_to_percent(int vcap) {
+    uint32_t energy = V2E(vcap);
+    energy = MAX(MIN(energy, E_MAX), E_MIN);
+    uint8_t level = (energy - E_MIN) * 100 / (E_MAX - E_MIN);
+    return level;
+}
+
+uint8_t power_percentage(void) {
+    int16_t vcap = mb_measure_vcap();
+    if (vcap < 0) { // Read error => return 0%
         return 0;
     }
-    return (100 * (vcap - VCAP_MIN)) / (VCAP_MAX - VCAP_MIN);
-}
 
-static power_level_t percent_to_level(int percent) {
-    if (percent > THRESHOLD_HIGH) {
-        return POWER_HIGH;
-    }
-    if (percent > THRESHOLD_MED) {
-        return POWER_MEDIUM;
-    }
-    return POWER_LOW;
-}
-
-power_level_t power_get_level(void) {
-    int vcap = mb_measure_vcap();
-    int percent = vcap_to_percent(vcap);
-    return percent_to_level(percent);
-}
-
-void power_update_indicator(void) {
-    power_level_t level = power_get_level();
-
-    if (level == last_level) {
-        return;
-    }
-
-    mb_leds_off();
-
-    switch (level) {
-    case POWER_HIGH:
-        mb_led_toggle(MB_LED_G);
-        break;
-    case POWER_MEDIUM:
-        mb_led_toggle(MB_LED_R);
-        mb_led_toggle(MB_LED_G);
-        break;
-    case POWER_LOW:
-        mb_led_toggle(MB_LED_R);
-        break;
-    }
-
-    last_level = level;
+    return vcap_to_percent(vcap);
 }

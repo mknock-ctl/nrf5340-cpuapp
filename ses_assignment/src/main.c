@@ -3,6 +3,8 @@
 #include <mergebot.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/drivers/led.h>
+
 
 #include "mb_power.h"
 #include "robot.h"
@@ -14,6 +16,11 @@
 #include "robot/sensors/crash_detect.h"
 #include "ses_assignment.h"
 
+static const struct device *pwm_leds_dev = DEVICE_DT_GET(DT_NODELABEL(pwm_leds_controller));
+
+#define LED_IDX_RED 0
+#define LED_IDX_GRN 1
+
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 static K_SEM_DEFINE(tap_sem, 0, 1);
 
@@ -23,6 +30,12 @@ int init_hardware(void) {
     TRY_ERR(mb_error_t, mb_drive_init(4));
     TRY_ERR(mb_error_t, mb_power_init());
     TRY_ERR(mb_error_t, mb_led_init());
+
+    if (!device_is_ready(pwm_leds_dev)) {
+        LOG_ERR("PWM LED controller not ready. Check DeviceTree overlay.");
+        return -ENODEV;
+    }
+
     LOG_INF("Hardware ready");
     return 0;
 }
@@ -38,6 +51,13 @@ static void led_indicator_callback(int index) {
     }
 }
 
+static void update_battery_led(void) {
+    uint8_t percentage = power_percentage();
+
+    led_set_brightness(pwm_leds_dev, LED_IDX_GRN, percentage);
+    led_set_brightness(pwm_leds_dev, LED_IDX_RED, 100 - percentage);
+}
+
 static void tap_callback(void) {
     k_sem_give(&tap_sem);
 }
@@ -45,12 +65,23 @@ static void tap_callback(void) {
 static void wait_for_double_tap(void) {
     robot_set_imu_mode(IMU_MODE_TAP);
     tap_detect_register_callback(tap_callback);
-    LOG_INF("Waiting for double tap");
+    LOG_INF("Waiting for double tap...");
     
-    k_sem_take(&tap_sem, K_FOREVER);
-    
+    k_sem_reset(&tap_sem);
+
+    while (k_sem_take(&tap_sem, K_MSEC(100)) != 0) {
+        update_battery_led();
+    }    
+
+    led_set_brightness(pwm_leds_dev, LED_IDX_RED, 0);
+    led_set_brightness(pwm_leds_dev, LED_IDX_GRN, 0);
+
+    // This reconfigures the pins back to GPIO Output mode so 
+    // robot_set_status() works correctly.
+    mb_led_init();
+
     robot_set_imu_mode(IMU_MODE_OFF);
-    LOG_INF("Double tap detected");
+    LOG_INF("Double tap detected.");
 }
 
 static void follow_predefined_path(void) {    
@@ -95,7 +126,8 @@ int main(void) {
     for (;;) {
         
         // robot_set_imu_mode(IMU_MODE_CRASH);
-        // k_sleep(K_MSEC(200));
+        k_sleep(K_MSEC(200));
+        LOG_INF("Battery level = %u%%", power_percentage());
         // follow_predefined_path();
 
         // robot_set_imu_mode(IMU_MODE_OFF);
