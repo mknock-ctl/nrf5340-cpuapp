@@ -11,9 +11,19 @@
 #define CALIBRATION_RESET false
 #define TAP_TIMEOUT_MS 100
 
-#define TURNSPEED 100
+#define TURNSPEED 50
 #define MIN_SPEED 30
 #define KP 3.0f
+
+#define TICKS_PER_REV 705
+#define WHEEL_DIAMETER_MM 42
+
+#define SPEED_LEFT 100
+#define SPEED_RIGHT 104
+
+#define KP_ALIGN 1.5f
+#define ALIGN_TOLERANCE 5.0f
+
 #define MM_PER_MS_DRIVE (3500.0f / 2000.0f) // calibrated via g_drive_avg_duration_ms
 #define SPEED 100
 
