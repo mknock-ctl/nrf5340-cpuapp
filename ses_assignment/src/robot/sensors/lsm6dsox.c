@@ -30,6 +30,19 @@ int lsm6dsox_read_reg(uint8_t reg, uint8_t *value) {
     return i2c_write_read_dt(&dev, &reg, 1, value, 1);
 }
 
+int lsm6dsox_read_multi_reg(uint8_t reg, uint8_t *data, size_t len) {
+    if (!data || len == 0) {
+        return -EINVAL;
+    }
+
+    const struct i2c_dt_spec dev = I2C_DT_SPEC_GET(DT_NODELABEL(lsm6dsox));
+    if (!device_is_ready(dev.bus)) {
+        return -ENODEV;
+    }
+
+    return i2c_write_read_dt(&dev, &reg, 1, data, len);
+}
+
 int lsm6dsox_update_reg(uint8_t reg, uint8_t mask, uint8_t val) {
     uint8_t old_val;
     TRY_ERR(int, lsm6dsox_read_reg(reg, &old_val));

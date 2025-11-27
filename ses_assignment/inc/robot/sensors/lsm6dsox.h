@@ -7,6 +7,7 @@
 #define LSM6DSOX_ADDR 0x6A
 #define LSM6DSOX_WHO_AM_I 0x0F
 #define LSM6DSOX_WHO_AM_I_VALUE 0x6C
+#define LSM6DSOX_INT1_CTRL 0x0D
 
 #define LSM6DSOX_CTRL1_XL 0x10
 #define LSM6DSOX_CTRL2_G 0x11
@@ -42,6 +43,7 @@
 // TAP_CFG2
 #define TAP_INTERRUPTS_ENABLE (1 << 7)
 
+#define INT1_DRDY_XL (1 << 0)
 // INT_DUR2
 // Dur: Max time between two taps
 // Quiet: Time to ignore inputs after a tap (Keep this short!)
@@ -83,6 +85,8 @@ int lsm6dsox_write_reg(uint8_t reg, uint8_t value);
 int lsm6dsox_update_reg(uint8_t reg, uint8_t mask, uint8_t value);
 
 int lsm6dsox_route_int1(uint8_t bit_mask, bool enable);
+int lsm6dsox_route_dataready_int1(bool enable);
+int lsm6dsox_read_accel_raw(int16_t *x, int16_t *y, int16_t *z);
 
 int lsm6dsox_configure_tap_params(void);
 int lsm6dsox_configure_crash_params(void);
