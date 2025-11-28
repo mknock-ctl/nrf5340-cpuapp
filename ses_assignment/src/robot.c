@@ -125,7 +125,6 @@ int robot_init(void) {
     TRY_ERR(int, robot_gpio_init());
     TRY_ERR(int, lis3mdl_init());
     TRY_ERR(int, calibration_init(CALIBRATION_RESET));
-    TRY_ERR(int, motion_verify_init());
     LOG_INF("Robot ready");
     return 0;
 }
@@ -169,8 +168,9 @@ void robot_move(int32_t distance_mm) {
     
     LOG_INF("Target ticks: %d", target_ticks);
 
-    //motion_verify_start(forward);
+    lsm6dsox_enable_motion_only();
     crash_detect_set_active(true, forward);
+    motion_verify_start(forward);
     k_sem_reset(&crash_sem);
     
     k_sleep(K_MSEC(50));
@@ -202,7 +202,7 @@ void robot_move(int32_t distance_mm) {
         k_sleep(K_MSEC(10));
     }
 
-   // motion_verify_stop();
+    motion_verify_stop();
     crash_detect_set_active(false, false);
     mb_drive(forward ? -SPEED : SPEED, forward ? -SPEED : SPEED);
     k_sleep(K_MSEC(25));

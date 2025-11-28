@@ -61,7 +61,7 @@ int calibration_init(bool reset) {
 
 bool calibration_needed(void) {
     return (fabsf(g_ms_per_degree) < 0.001f || 
-            fabsf(g_drive_avg_duration_ms) < 0.001f ||
+            //fabsf(g_drive_avg_duration_ms) < 0.001f ||
             g_mag_offset_x < 0 || g_mag_offset_y < 0 ||
             fabsf(g_accel_bias_x) < 0.001f);
 }

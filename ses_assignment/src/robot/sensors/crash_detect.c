@@ -58,10 +58,8 @@ static int crash_init(sensor_base_t *s) {
     crash_sensor_t *cs = CONTAINER_OF(s, crash_sensor_t, base);
     if (!cs->handler) return -EINVAL;
     k_work_init(&cs->crash_work, crash_work_handler);
-    lsm6dsox_configure_crash_params();
     lsm6dsox_clear_interrupts();
     gpio_int_register_callback(cs->base.gpio_handle, crash_isr, NULL);
-    lsm6dsox_route_int1(INT1_WU, true);
     LOG_INF("Crash detection initialized");
     return 0;
 }
@@ -69,7 +67,6 @@ static int crash_init(sensor_base_t *s) {
 static int crash_deinit(sensor_base_t *s) {
     crash_sensor_t *cs = CONTAINER_OF(s, crash_sensor_t, base);
     cs->base.active = false;
-    lsm6dsox_route_int1(INT1_WU, false);
     gpio_int_unregister_callback(cs->base.gpio_handle, crash_isr);
     LOG_INF("Crash detection deinitialized");
     return 0;

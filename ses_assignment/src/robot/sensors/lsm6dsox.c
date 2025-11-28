@@ -114,8 +114,8 @@ int lsm6dsox_reset_embedded_functions(void) {
     return 0;
 }
 
-int lsm6dsox_configure_tap_params(void) {
-    LOG_INF("Configuring tap detection...");
+int lsm6dsox_enable_tap_only(void) {
+    LOG_INF("Enabling tap detection only...");
     lsm6dsox_reset_embedded_functions();
 
     CONFIGURE_REGS(lsm6dsox_write_reg,
@@ -125,43 +125,38 @@ int lsm6dsox_configure_tap_params(void) {
                    // Enable Block Data Update
                    {LSM6DSOX_CTRL3_C, 0x44}, // BDU | IF_INC
 
-                   // Enable INT1 output (some LSM6DSOX require this)
+                   // Enable INT1 output
                    {LSM6DSOX_CTRL4_C, 0x00},
 
-                   // Tap Configuration - ONLY Z-axis for cleaner detection
-                   // TAP_LIR keeps INT1 high until we read TAP_SRC
+                   // Tap Configuration - ONLY Z-axis
                    {LSM6DSOX_TAP_CFG0, TAP_Z_EN | TAP_LIR},
 
-                   // X Threshold (not used since X is disabled, but set anyway)
+                   // X Threshold
                    {LSM6DSOX_TAP_CFG1, TAP_THRESHOLD_X(0x08)},
 
                    // Enable Interrupts in hardware engine
                    {LSM6DSOX_TAP_CFG2, TAP_INTERRUPTS_ENABLE},
 
-                   // Z Threshold - Balanced sensitivity
+                   // Z Threshold
                    {LSM6DSOX_TAP_THS_6D, TAP_THRESHOLD_Z(0x0A)},
 
-                   // Single/double-tap selection and wake-up configuration (R/W)
-                   {LSM6DSOX_WAKE_UP_THS, WAKE_UP_THS_SINGLE_DOUBLE_TAP | CRASH_THRESHOLD_WAKEUP},
+                   // Single/double-tap selection
+                   {LSM6DSOX_WAKE_UP_THS, WAKE_UP_THS_SINGLE_DOUBLE_TAP},
 
-                   // SHOCK: 0x01 = ~20ms (tap must END quickly so sensor knows it's done)
-                   // QUIET: 0x01 = ~20ms (brief pause after tap before listening again)
-                   // DUR:   0x06 = ~300ms (maximum time between the two taps)
-                   //
-                   // Problem with your settings: SHOCK=0x03 is TOO LONG
-                   // The sensor thinks the tap never ends, so it can't detect a "second" tap
+                   // Tap timing parameters
                    {LSM6DSOX_INT_DUR2, TAP_DURATION(0x06) | TAP_QUIET(0x02) | TAP_SHOCK(0x02)},
 
                    {LSM6DSOX_WAKE_UP_DUR, 0x00});
 
-    LOG_INF("Tap detection configured successfully");
+    // Route tap interrupts to INT1
+    lsm6dsox_route_int1(INT1_DOUBLE_TAP, true);
 
+    LOG_INF("Tap detection enabled");
     return 0;
 }
 
-int lsm6dsox_configure_crash_params(void) {
-    LOG_INF("Configuring crash params...");
-
+int lsm6dsox_enable_crash_only(void) {
+    LOG_INF("Enabling crash detection only...");
     lsm6dsox_reset_embedded_functions();
 
     CONFIGURE_REGS(lsm6dsox_write_reg,
@@ -171,12 +166,62 @@ int lsm6dsox_configure_crash_params(void) {
                    
                    {LSM6DSOX_TAP_CFG0, 0x00}, 
 
+                   // Crash threshold (wake-up threshold)
                    {LSM6DSOX_WAKE_UP_THS, CRASH_THRESHOLD_WAKEUP}, 
 
                    {LSM6DSOX_WAKE_UP_DUR, 0x02},
 
+                   // Enable interrupts
                    {LSM6DSOX_TAP_CFG2, TAP_INTERRUPTS_ENABLE});
 
+    // Route wake-up interrupt to INT1
+    lsm6dsox_route_int1(INT1_WU, true);
+
+    LOG_INF("Crash detection enabled");
+    return 0;
+}
+
+int lsm6dsox_enable_motion_only(void) {
+    LOG_INF("Enabling motion verification only...");
+    lsm6dsox_reset_embedded_functions();
+
+    CONFIGURE_REGS(lsm6dsox_write_reg,
+                   // Setup ODR and Range
+                   {LSM6DSOX_CTRL1_XL, ODR_XL_416Hz | FS_XL_2g},
+                   {LSM6DSOX_CTRL3_C, 0x44},
+                   {LSM6DSOX_INT1_CTRL, 0x01}
+                ); // BDU | IF_INC
+
+    // Route data ready interrupt to INT1
+    lsm6dsox_route_dataready_int1(true);
+
+    LOG_INF("Motion verification enabled");
+    return 0;
+}
+
+int lsm6dsox_enable_crash_and_motion(void) {
+    LOG_INF("Enabling crash detection and motion verification...");
+    lsm6dsox_reset_embedded_functions();
+
+    CONFIGURE_REGS(lsm6dsox_write_reg,
+                   // Basic setup
+                   {LSM6DSOX_CTRL1_XL, ODR_XL_416Hz | FS_XL_2g},
+                   {LSM6DSOX_CTRL3_C, 0x44}, 
+                   
+                   {LSM6DSOX_TAP_CFG0, 0x00}, 
+
+                   // Crash threshold
+                   {LSM6DSOX_WAKE_UP_THS, CRASH_THRESHOLD_WAKEUP}, 
+
+                   {LSM6DSOX_WAKE_UP_DUR, 0x02},
+
+                   // Enable interrupts
+                   {LSM6DSOX_TAP_CFG2, TAP_INTERRUPTS_ENABLE});
+
+    // Route BOTH wake-up and data ready to INT1
+    lsm6dsox_route_int1(INT1_WU | INT1_DRDY_XL, true);
+
+    LOG_INF("Crash detection and motion verification enabled");
     return 0;
 }
 

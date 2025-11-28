@@ -1,6 +1,5 @@
 #ifndef LSM6DSOX_H
 #define LSM6DSOX_H
-
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -43,20 +42,21 @@
 // TAP_CFG2
 #define TAP_INTERRUPTS_ENABLE (1 << 7)
 
-#define INT1_DRDY_XL (1 << 0)
 // INT_DUR2
-// Dur: Max time between two taps
-// Quiet: Time to ignore inputs after a tap (Keep this short!)
-// Shock: Max duration of the impact
 #define TAP_DURATION(val) ((val & 0x0F) << 4)
 #define TAP_QUIET(val) ((val & 0x03) << 2)
 #define TAP_SHOCK(val) (val & 0x03)
 
-// MD1_CFG
-#define INT1_DOUBLE_TAP (1 << 3)
-#define INT1_WU         (1 << 5)
-#define INT1_SINGLE_TAP (1 << 6)
-#define INT1_6D         (1 << 2)
+// MD1_CFG (0x5E) - INT1 pin routing register
+// THESE are the bits that control what interrupts appear on INT1!
+#define INT1_DRDY_XL    (1 << 0)  // Accelerometer data ready
+#define INT1_DRDY_G     (1 << 1)  // Gyroscope data ready  
+#define INT1_6D         (1 << 2)  // 6D orientation change
+#define INT1_DOUBLE_TAP (1 << 3)  // Double tap
+#define INT1_FF         (1 << 4)  // Free fall
+#define INT1_WU         (1 << 5)  // Wake up / Crash
+#define INT1_SINGLE_TAP (1 << 6)  // Single tap
+#define INT1_SLEEP      (1 << 7)  // Sleep change
 
 // TAP SRC Flags
 #define TAP_SRC_DOUBLE_TAP (1 << 4)
@@ -64,13 +64,12 @@
 
 // WAKE_UP_THS
 #define WAKE_UP_THS_SINGLE_DOUBLE_TAP (1 << 7)
-#define CRASH_THRESHOLD_WAKEUP 0x19 // On ground 0x1C
-// #define CRASH_THRESHOLD_WAKEUP 0x19 // On table
-// gyro values
+#define CRASH_THRESHOLD_WAKEUP 0x19
 
-#define GYRO_CFG_500DPS_416HZ 0x64  // 0b0110_0100
-#define GYRO_CFG_250DPS_416HZ 0x60  // 0b0110_0000 (if you want more precision)
-#define GYRO_CFG_1000DPS_416HZ 0x68 // 0b0110_1000 (if turns are very fast)
+// Gyro values
+#define GYRO_CFG_500DPS_416HZ 0x64
+#define GYRO_CFG_250DPS_416HZ 0x60
+#define GYRO_CFG_1000DPS_416HZ 0x68
 
 typedef struct {
     int16_t x;
@@ -80,20 +79,17 @@ typedef struct {
 
 int lsm6dsox_init(void);
 int lsm6dsox_verify_device(void);
-
 int lsm6dsox_read_reg(uint8_t reg, uint8_t *value);
 int lsm6dsox_write_reg(uint8_t reg, uint8_t value);
 int lsm6dsox_update_reg(uint8_t reg, uint8_t mask, uint8_t value);
-
 int lsm6dsox_route_int1(uint8_t bit_mask, bool enable);
 int lsm6dsox_route_dataready_int1(bool enable);
 int lsm6dsox_read_accel_raw(int16_t *x, int16_t *y, int16_t *z);
-
-int lsm6dsox_configure_tap_params(void);
-int lsm6dsox_configure_crash_params(void);
-int lsm6dsox_configure_gyro(void);
+int lsm6dsox_enable_tap_only(void);
+int lsm6dsox_enable_crash_only(void);
+int lsm6dsox_enable_motion_only(void);
+int lsm6dsox_enable_crash_and_motion(void);
 int lsm6dsox_accel_set_odr(bool active);
-
 float lsm6dsox_gyro_to_dps(int16_t raw_value);
 int lsm6dsox_read_gyro(lsm6dsox_gyro_data_t *data);
 void lsm6dsox_clear_interrupts(void);

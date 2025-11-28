@@ -122,12 +122,12 @@ int main(void) {
     robot_set_imu_mode(IMU_MODE_CRASH);
     robot_move(2000);
 
-
     for (;;) {
         
         // robot_set_imu_mode(IMU_MODE_CRASH);
         k_sleep(K_MSEC(200));
         LOG_INF("Battery level = %u%%", power_percentage());
+        int32_t current_left, current_right;
         // follow_predefined_path();
 
         // robot_set_imu_mode(IMU_MODE_OFF);
