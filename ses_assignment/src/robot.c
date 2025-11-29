@@ -27,6 +27,7 @@ static const struct gpio_dt_spec int1_gpio = {
 };
 
 static robot_imu_mode_t current_mode = IMU_MODE_OFF;
+static robot_status_t current_robot_status = STATUS_OK;
 static K_SEM_DEFINE(crash_sem, 0, 1);
 static volatile bool was_moving_forward = false;
 
@@ -168,7 +169,7 @@ void robot_move(int32_t distance_mm) {
     
     LOG_INF("Target ticks: %d", target_ticks);
 
-    lsm6dsox_enable_motion_only();
+    lsm6dsox_enable_crash_and_motion();
     crash_detect_set_active(true, forward);
     motion_verify_start(forward);
     k_sem_reset(&crash_sem);
@@ -240,13 +241,13 @@ void robot_turn(int32_t angle_deg) {
         if (current_speed > base_speed) current_speed = base_speed;
         if (current_speed < MIN_SPEED) current_speed = MIN_SPEED;
 
-        mb_drive(angle_deg > 0 ? current_speed : -current_speed,
-                 angle_deg > 0 ? -current_speed : current_speed);
+        mb_drive(angle_deg > 0 ? -current_speed : current_speed,
+                 angle_deg > 0 ? current_speed : -current_speed);
         k_sleep(K_MSEC(5));
     }
 
-    mb_drive(angle_deg > 0 ? -TURNSPEED : TURNSPEED,
-             angle_deg > 0 ? TURNSPEED : -TURNSPEED);
+    mb_drive(angle_deg > 0 ? TURNSPEED : -TURNSPEED,
+             angle_deg > 0 ? -TURNSPEED : TURNSPEED);
     k_sleep(K_MSEC(25));
     mb_drive(0, 0);
     k_sleep(K_MSEC(100));
@@ -255,50 +256,148 @@ void robot_turn(int32_t angle_deg) {
 void robot_turn_to_north(void) {
     LOG_INF("Turning to North");
     uint32_t start_time = k_uptime_get_32();
-    int consecutive_success = 0;
+    
+    const float tolerance = 8.0f; // Increased tolerance for noisy sensor
+    int consecutive_good = 0;
+    const int required_good = 3;
+    
+    float last_error = 0.0f;
+    int oscillation_count = 0;
+    
+    mb_drive(0, 0);
+    k_sleep(K_MSEC(300)); // Longer settling time
+    float initial_heading = robot_calculate_heading();
+    float target_heading = ROBOT_HEADING_NORTH;
+    
+    LOG_INF("Initial heading: %.2f, Target: %.2f", (double)initial_heading, (double)target_heading);
+
+    float initial_error = normalize_angle_diff(target_heading - initial_heading);
+    bool turn_clockwise = (initial_error < 0); // negative error means turn counter-clockwise (left)
+    
+    LOG_INF("Initial error: %.2f, will turn %s", (double)initial_error, 
+            turn_clockwise ? "clockwise" : "counter-clockwise");
 
     while (true) {
         if ((k_uptime_get_32() - start_time) > TURN_TIMEOUT_MS) {
             LOG_ERR("Timeout reached");
+            mb_drive(0, 0);
             break;
         }
 
+        // Read heading with motors OFF
+        mb_drive(0, 0);
+        k_sleep(K_MSEC(300));
+        
         float current_heading = robot_calculate_heading();
-        float error = normalize_angle_diff(ROBOT_HEADING_NORTH - current_heading);
+        float error = normalize_angle_diff(target_heading - current_heading);
+        float abs_error = fabsf(error);
 
-        LOG_DBG("Heading: %.2f, Error: %.2f", (double)current_heading, (double)error);
+        LOG_INF("Heading: %.2f, Error: %.2f", (double)current_heading, (double)error);
 
-        if (fabsf(error) <= ALIGN_TOLERANCE) {
-            consecutive_success++;
-            if (consecutive_success >= 3) { // Ensure stability
-                LOG_INF("Aligned to North");
+        if (abs_error <= tolerance) {
+            consecutive_good++;
+            LOG_INF("Good reading %d/%d (error: %.2f)", consecutive_good, required_good, (double)abs_error);
+            
+            if (consecutive_good >= required_good) {
+                LOG_INF("Aligned to North (heading: %.2f)", (double)current_heading);
+                mb_drive(0, 0);
                 break;
             }
+            continue; // Take another reading to confirm
         } else {
-            consecutive_success = 0;
+            consecutive_good = 0;
         }
 
-        int16_t turn_speed = (int16_t)(error * KP_ALIGN);
-        
-        // Clamp speed to max TURNSPEED
-        if (turn_speed > TURNSPEED) turn_speed = TURNSPEED;
-        if (turn_speed < -TURNSPEED) turn_speed = -TURNSPEED;
-        
-        // Ensure minimum speed to overcome friction
-        if (turn_speed > 0 && turn_speed < MIN_SPEED) turn_speed = MIN_SPEED;
-        if (turn_speed < 0 && turn_speed > -MIN_SPEED) turn_speed = -MIN_SPEED;
+        // Detect oscillation
+        if (last_error != 0.0f && 
+            ((last_error > 0 && error < 0) || (last_error < 0 && error > 0)) &&
+            abs_error > tolerance) {
+            oscillation_count++;
+            LOG_WRN("Oscillation detected (%d), error %.2f -> %.2f", 
+                    oscillation_count, (double)last_error, (double)error);
+        } else {
+            oscillation_count = 0;
+        }
+        last_error = error;
 
-        // mb_drive(-turn_speed, turn_speed);
-        LOG_INF("Heading: %.2f, Error: %.2f, Speed: %d", (double)current_heading, (double)error, turn_speed);
-        k_sleep(K_MSEC(50)); // Update rate
+        // If oscillating too much, take a longer reading to get better average
+        if (oscillation_count >= 2) {
+            LOG_INF("High oscillation detected, waiting for better reading...");
+            k_sleep(K_MSEC(200));
+            current_heading = robot_calculate_heading();
+            error = normalize_angle_diff(target_heading - current_heading);
+            abs_error = fabsf(error);
+            LOG_INF("After wait - Heading: %.2f, Error: %.2f", 
+                    (double)current_heading, (double)error);
+            oscillation_count = 0;
+        }
+
+        int16_t turn_speed;
+        int32_t turn_duration_ms;
+        
+        // If oscillating, use gentler movements
+        float speed_multiplier = (oscillation_count > 0) ? 0.7f : 1.0f;
+        
+        if (abs_error > 90.0f) {
+            // Very large error
+            turn_speed = TURNSPEED * speed_multiplier;
+            turn_duration_ms = 300;
+        } else if (abs_error > 45.0f) {
+            // Large error
+            turn_speed = TURNSPEED * speed_multiplier;
+            turn_duration_ms = 200;
+        } else if (abs_error > 20.0f) {
+            // Medium error
+            turn_speed = TURNSPEED * 0.8f * speed_multiplier;
+            turn_duration_ms = 120;
+        } else if (abs_error > 12.0f) {
+            // Small error
+            turn_speed = TURNSPEED * 0.6f * speed_multiplier;
+            turn_duration_ms = 80;
+        } else {
+            // Very small error
+            turn_speed = MIN_SPEED;
+            turn_duration_ms = 40;
+        }
+
+        bool current_turn_clockwise = (error < 0);
+        
+        if (current_turn_clockwise) {
+            mb_drive(turn_speed, -turn_speed);  // Turn clockwise
+        } else {
+            mb_drive(-turn_speed, turn_speed);
+        }
+        
+        LOG_INF("Turning %s at speed %d for %d ms", 
+                current_turn_clockwise ? "CW" : "CCW", turn_speed, turn_duration_ms);
+        
+        k_sleep(K_MSEC(turn_duration_ms));
+        
+        mb_drive(0, 0);
+        k_sleep(K_MSEC(50));
+        
+        int16_t brake_speed = turn_speed / 3;
+        if (current_turn_clockwise) {
+            mb_drive(-brake_speed, brake_speed);
+        } else {
+            mb_drive(brake_speed, -brake_speed);
+        }
+        k_sleep(K_MSEC(30));
+        mb_drive(0, 0);
     }
 
     mb_drive(0, 0);
-    k_sleep(K_MSEC(100));
+    k_sleep(K_MSEC(300)); // Final settling time
 }
 
 void robot_set_status(robot_status_t status) {
     mb_leds_off();
+
+    if (current_robot_status == STATUS_CRASH) {
+        mb_led_toggle(MB_LED_R);
+        return;
+    }
+
     switch (status) {
         case STATUS_OK:
             mb_led_toggle(MB_LED_G);
@@ -314,4 +413,5 @@ void robot_set_status(robot_status_t status) {
             mb_led_toggle(MB_LED_R);
             break;
     }
+    current_robot_status = status;
 }

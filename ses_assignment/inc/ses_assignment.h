@@ -18,8 +18,8 @@
 #define TICKS_PER_REV 705
 #define WHEEL_DIAMETER_MM 42
 
-#define SPEED_LEFT 30//100
-#define SPEED_RIGHT 34//104
+#define SPEED_LEFT 30////100
+#define SPEED_RIGHT 30//104
 
 #define KP_ALIGN 1.5f
 #define ALIGN_TOLERANCE 5.0f

@@ -14,7 +14,7 @@ LOG_MODULE_REGISTER(motion_verify, LOG_LEVEL_DBG);
 extern struct gpio_int_handle int1_handle;
 
 #define CHECK_INTERVAL_MS 200
-#define THRESHOLD_PERCENT 15.0f
+#define THRESHOLD_PERCENT 5.0f
 #define MIN_VEL_MM_S 50.0f
 #define ACCEL_TO_MS2 0.000598f
 #define ENCODER_TRUST 0.85f  // 85% encoder, 15% accelerometer
@@ -135,6 +135,7 @@ static void timer_cb(struct k_timer *t) {
 static void isr(gpio_pin_t pin, void *ud) {
     ARG_UNUSED(pin);
     ARG_UNUSED(ud);
+    LOG_DBG("Motion verify ISR triggered");
     
     if (g_motion.base.active) {        
         k_work_submit(&g_motion.accel_work);

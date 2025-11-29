@@ -53,6 +53,7 @@ static void led_indicator_callback(int index) {
 
 static void update_battery_led(void) {
     uint8_t percentage = power_percentage();
+    //LOG_INF("Battery level = %u%%", percentage);
 
     led_set_brightness(pwm_leds_dev, LED_IDX_GRN, percentage);
     led_set_brightness(pwm_leds_dev, LED_IDX_RED, 100 - percentage);
@@ -84,19 +85,19 @@ static void wait_for_double_tap(void) {
     LOG_INF("Double tap detected.");
 }
 
-static void follow_predefined_path(void) {    
+static void follow_predefined_path(float scale) {    
     robot_turn_to_north();
-    robot_move(2000);
-    robot_turn(-90); // 90 degrees left
-    robot_move(2000);
-    robot_turn(90);
-    robot_move(2000);
-    robot_turn(90);
-    robot_move(2000);
-    robot_turn(-180);
-    robot_move(-2000);
+    robot_move(2000 * scale);
+    robot_turn(90); // 90 degrees left
+    robot_move(2000 * scale);
     robot_turn(-90);
-    robot_move(4000);        
+    robot_move(2000 * scale);
+    robot_turn(-90);
+    robot_move(2000 * scale);
+    robot_turn(180);
+    robot_move(-2000 * scale);
+    robot_turn(90);
+    robot_move(4000 * scale);        
 }
 
 int main(void) {
@@ -118,25 +119,16 @@ int main(void) {
         mb_led_toggle(MB_LED_G);
         k_sleep(K_MSEC(400));
     }
-
     robot_set_imu_mode(IMU_MODE_CRASH);
     robot_move(2000);
 
+    //robot_move(2000);
+
     for (;;) {
-        
-        // robot_set_imu_mode(IMU_MODE_CRASH);
+        update_battery_led();
+
         k_sleep(K_MSEC(200));
-        LOG_INF("Battery level = %u%%", power_percentage());
-        int32_t current_left, current_right;
-        // follow_predefined_path();
-
-        // robot_set_imu_mode(IMU_MODE_OFF);
-        // wait_for_double_tap();
-        // for (int i = 0; i < 3; i++) {
-        //     mb_led_toggle(MB_LED_G);
-        //     k_sleep(K_MSEC(400));
-        // }
-
+        //follow_predefined_path(0.2f);
 
         /*
         double x_raw_d, y_raw_d;
