@@ -135,7 +135,6 @@ static void timer_cb(struct k_timer *t) {
 static void isr(gpio_pin_t pin, void *ud) {
     ARG_UNUSED(pin);
     ARG_UNUSED(ud);
-    LOG_DBG("Motion verify ISR triggered");
     
     if (g_motion.base.active) {        
         k_work_submit(&g_motion.accel_work);

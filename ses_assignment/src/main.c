@@ -59,6 +59,79 @@ static void update_battery_led(void) {
     led_set_brightness(pwm_leds_dev, LED_IDX_RED, 100 - percentage);
 }
 
+static void test_turn(void) {
+    robot_turn(45);
+    k_sleep(K_MSEC(400));
+    robot_turn(-45);
+    k_sleep(K_MSEC(400));
+    robot_turn(90);
+    k_sleep(K_MSEC(400));
+    robot_turn(-90);
+    k_sleep(K_MSEC(400));
+    robot_turn(135);
+    k_sleep(K_MSEC(400));
+    robot_turn(-135);
+    k_sleep(K_MSEC(400));
+    robot_turn(180);
+    k_sleep(K_MSEC(400));
+    robot_turn(-180);
+}
+
+static void test_move(void) {
+    robot_move(100);
+    k_sleep(K_MSEC(3000));
+    robot_move(-100);
+    k_sleep(K_MSEC(3000));
+    robot_move(500);
+    k_sleep(K_MSEC(3000));
+    robot_move(-500);
+    k_sleep(K_MSEC(3000));
+    robot_move(1000);
+    k_sleep(K_MSEC(3000));
+    robot_move(-1000);
+    k_sleep(K_MSEC(3000));
+    robot_move(2000);
+    k_sleep(K_MSEC(3000));
+    robot_move(-2000);
+    k_sleep(K_MSEC(3000));
+}
+
+static void test_mag(void) {
+    double x_raw_d, y_raw_d;
+    lis3mdl_data_t mag_data;
+    TRY_ERR(int, lis3mdl_read_mag(&mag_data));
+
+    int32_t x_raw = mag_data.x;
+    int32_t y_raw = mag_data.y;
+
+    x_raw_d = (double)x_raw;
+    y_raw_d = (double)y_raw;
+
+    double x = x_raw_d;
+    double y = y_raw_d;
+
+    double x1 = x_raw_d - (double)g_mag_offset_x;
+    double y1 = y_raw_d - (double)g_mag_offset_y;
+
+    double x2 = (x_raw_d - (double)g_mag_offset_x) * (double)g_mag_scale_x;
+    double y2 = (y_raw_d - (double)g_mag_offset_y) * (double)g_mag_scale_y;
+
+    LOG_INF("(raw x:%.3f y:%.3f), (off x1:%.3f y1:%.3f), (corr x2:%.3f y2:%.3f)",
+            x, y, x1, y1, x2, y2);
+
+    double heading  = atan2(x, y) * 180.0 / M_PI;
+    double heading1 = atan2(x1, y1) * 180.0 / M_PI;
+    double heading2 = atan2(x2, y2) * 180.0 / M_PI;
+
+    if (heading < 0)  heading += 360.0;
+    if (heading1 < 0) heading1 += 360.0;
+    if (heading2 < 0) heading2 += 360.0;
+
+    LOG_INF("(h:%.3f), (h1:%.3f), (h2:%.3f), (h3: %.3f)", heading, heading1, heading2, robot_calculate_heading());
+
+    k_sleep(K_MSEC(500));
+}
+
 static void tap_callback(void) {
     k_sem_give(&tap_sem);
 }
@@ -113,58 +186,20 @@ int main(void) {
         calibration_sequence(TURNSPEED, drive_callback, led_indicator_callback);
     }
 
-    wait_for_double_tap();
-
-    for (int i = 0; i < 3; i++) {
-        mb_led_toggle(MB_LED_G);
-        k_sleep(K_MSEC(400));
-    }
-    robot_set_imu_mode(IMU_MODE_CRASH);
-    robot_move(2000);
-
-    //robot_move(2000);
-
     for (;;) {
         update_battery_led();
 
         k_sleep(K_MSEC(200));
-        //follow_predefined_path(0.2f);
 
-        /*
-        double x_raw_d, y_raw_d;
-        lis3mdl_data_t mag_data;
-        TRY_ERR(int, lis3mdl_read_mag(&mag_data));
+        wait_for_double_tap();
 
-        int32_t x_raw = mag_data.x;
-        int32_t y_raw = mag_data.y;
-
-        x_raw_d = (double)x_raw;
-        y_raw_d = (double)y_raw;
-
-        double x = x_raw_d;
-        double y = y_raw_d;
-
-        double x1 = x_raw_d - (double)g_mag_offset_x;
-        double y1 = y_raw_d - (double)g_mag_offset_y;
-
-        double x2 = (x_raw_d - (double)g_mag_offset_x) * (double)g_mag_scale_x;
-        double y2 = (y_raw_d - (double)g_mag_offset_y) * (double)g_mag_scale_y;
-
-        LOG_INF("(raw x:%.3f y:%.3f), (off x1:%.3f y1:%.3f), (corr x2:%.3f y2:%.3f)",
-                x, y, x1, y1, x2, y2);
-
-        double heading  = atan2(x, y) * 180.0 / M_PI;
-        double heading1 = atan2(x1, y1) * 180.0 / M_PI;
-        double heading2 = atan2(x2, y2) * 180.0 / M_PI;
-
-        if (heading < 0)  heading += 360.0;
-        if (heading1 < 0) heading1 += 360.0;
-        if (heading2 < 0) heading2 += 360.0;
-
-        LOG_INF("(h:%.3f), (h1:%.3f), (h2:%.3f), (h3: %.3f)", heading, heading1, heading2, robot_calculate_heading());
-
-        k_sleep(K_MSEC(500));*/
-
+        for (int i = 0; i < 3; i++) {
+            mb_led_toggle(MB_LED_G);
+            k_sleep(K_MSEC(400));
+        }
+        robot_set_imu_mode(IMU_MODE_CRASH);
+        robot_set_status(STATUS_OK);
+        follow_predefined_path(0.2f);
     }
 
     UNREACHABLE();

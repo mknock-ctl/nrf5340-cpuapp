@@ -155,36 +155,59 @@ float robot_calculate_heading(void) {
     return (float)heading;
 }
 
+static void mb_drive_compensated(int16_t left_speed, int16_t right_speed) {
+    // Apply scale factors from calibration
+    int16_t compensated_left = (int16_t)(left_speed * g_motor_left_scale);
+    int16_t compensated_right = (int16_t)(right_speed * g_motor_right_scale);
+    
+    mb_drive(compensated_left, compensated_right);
+}
+    
+
+//target_ticks = (int32_t)(abs_distance * g_ticks_per_mm);
 void robot_move(int32_t distance_mm) {
     if (distance_mm == 0) return;
     
-    LOG_INF("Moving %d mm", distance_mm);
-
     bool forward = (distance_mm > 0);
-    int32_t target_distance = abs(distance_mm);
+    int32_t abs_distance = abs(distance_mm);
     
-    // Calculate target ticks: (distance / circumference) * ticks_per_rev
+    // Calculate target ticks
     float circumference = M_PI * WHEEL_DIAMETER_MM;
-    int32_t target_ticks = (int32_t)((target_distance / circumference) * TICKS_PER_REV);
-    
-    LOG_INF("Target ticks: %d", target_ticks);
+    int32_t target_ticks = (int32_t)((abs_distance / circumference) * TICKS_PER_REV);
 
+    // Setup crash detection
     lsm6dsox_enable_crash_and_motion();
     crash_detect_set_active(true, forward);
     motion_verify_start(forward);
     k_sem_reset(&crash_sem);
-    
     k_sleep(K_MSEC(50));
 
+    // Get starting positions
     int32_t start_left, start_right;
     mb_angle(&start_left, &start_right);
+
+    const float KP = 0.1f;      // Low for gentler response
+    const float KI = 0.0008f;     // Lower to prevent integral windup
+    const float KD = 0.05f;      // Derivative causes jerk
+    const int16_t MAX_CORRECTION = 40;
     
+    const int32_t RAMP_UP_TICKS = target_ticks / 4;
+    const int32_t RAMP_DOWN_TICKS = target_ticks / 4;
+    const int16_t MIN_RAMP_SPEED = SPEED / 3;
+    
+    int16_t base_speed = SPEED;
+    
+    float integral = 0.0f;
+    float last_error = 0.0f;
+    
+    uint32_t last_time = k_uptime_get_32();
     int32_t current_avg_ticks = 0;
+    int loop_count = 0;
 
-    mb_drive(forward ? SPEED_LEFT : -SPEED_LEFT, 
-             forward ? SPEED_RIGHT : -SPEED_RIGHT);
-
-    while (current_avg_ticks < target_ticks) {
+    while (true) {
+        loop_count++;
+        
+        // Check for crash
         if (current_mode != IMU_MODE_MOTION_VERIFY) {
             if (k_sem_take(&crash_sem, K_NO_WAIT) == 0) {
                 crash_detect_set_active(false, false);
@@ -192,65 +215,253 @@ void robot_move(int32_t distance_mm) {
                 UNREACHABLE();
             }
         }
-        int32_t current_left, current_right;
-        mb_angle(&current_left, &current_right);
+
+        uint32_t now = k_uptime_get_32();
+        float dt = (now - last_time) / 1000.0f;
+        if (dt < 0.001f) dt = 0.001f;
+        if (dt > 0.1f) dt = 0.1f;
+        last_time = now;
+
+        int32_t curr_l, curr_r;
+        mb_angle(&curr_l, &curr_r);
+        int32_t delta_left = abs(curr_l - start_left);
+        int32_t delta_right = abs(curr_r - start_right);
         
-        int32_t delta_left = abs(current_left - start_left);
-        int32_t delta_right = abs(current_right - start_right);
+        current_avg_ticks = (delta_left + delta_right) / 2;
+        int32_t remaining_ticks = target_ticks - current_avg_ticks;
         
-        current_avg_ticks = (delta_left + delta_right) / 2;        
-                 
+        if (current_avg_ticks >= target_ticks) break;
+        if (current_avg_ticks > target_ticks + 100) break;
+        if (remaining_ticks <= 0) break;
+        if (loop_count > 15000) break;
+        
+        int32_t encoder_diff = delta_left - delta_right;
+        float error = (float)encoder_diff;
+        
+        int16_t current_base_speed;
+        if (current_avg_ticks < RAMP_UP_TICKS) {
+            float ramp_factor = (float)current_avg_ticks / (float)RAMP_UP_TICKS;
+            current_base_speed = (int16_t)(MIN_RAMP_SPEED + 
+                                  (base_speed - MIN_RAMP_SPEED) * ramp_factor);
+        } else if (remaining_ticks < RAMP_DOWN_TICKS) {
+            float ramp_factor = (float)remaining_ticks / (float)RAMP_DOWN_TICKS;
+            current_base_speed = (int16_t)(MIN_RAMP_SPEED + 
+                                  (base_speed - MIN_RAMP_SPEED) * ramp_factor);
+            if (current_base_speed < MIN_SPEED) current_base_speed = MIN_SPEED;
+        } else {
+            current_base_speed = base_speed;
+        }
+        
+        // Simple PID
+        float p_term = KP * error;
+        
+        integral += error * dt;
+        const float INTEGRAL_MAX = 300.0f;
+        if (integral > INTEGRAL_MAX) integral = INTEGRAL_MAX;
+        if (integral < -INTEGRAL_MAX) integral = -INTEGRAL_MAX;
+        
+        float d_term = KD * (error - last_error) / dt;
+        last_error = error;
+        
+        // PID output
+        float pid_output = p_term + (KI * integral) + d_term;
+        int16_t correction = (int16_t)pid_output;
+        
+        if (correction > MAX_CORRECTION) correction = MAX_CORRECTION;
+        if (correction < -MAX_CORRECTION) correction = -MAX_CORRECTION;
+        
+        int16_t left_cmd = current_base_speed - correction;
+        int16_t right_cmd = current_base_speed + correction;
+        
+        if (!forward) {
+            left_cmd = -left_cmd;
+            right_cmd = -right_cmd;
+        }
+        
+        float left_final = left_cmd * g_motor_left_scale;
+        float right_final = right_cmd * g_motor_right_scale;
+        
+        int16_t left_final_cmd = (int16_t)left_final;
+        int16_t right_final_cmd = (int16_t)right_final;
+        
+        const int16_t SPEED_LIMIT = 380;
+        
+        if (abs(left_final_cmd) > SPEED_LIMIT || abs(right_final_cmd) > SPEED_LIMIT) {
+            float max_val = fmaxf(abs(left_final_cmd), abs(right_final_cmd));
+            float scale = SPEED_LIMIT / max_val;
+            
+            left_final_cmd = (int16_t)(left_final_cmd * scale);
+            right_final_cmd = (int16_t)(right_final_cmd * scale);
+            
+            integral *= 0.7f;
+        }
+        
+        mb_drive(left_final_cmd, right_final_cmd);
+        
         k_sleep(K_MSEC(10));
     }
 
     motion_verify_stop();
     crash_detect_set_active(false, false);
-    mb_drive(forward ? -SPEED : SPEED, forward ? -SPEED : SPEED);
-    k_sleep(K_MSEC(25));
+    
+    int16_t brake_speed = base_speed / 2;
+    if (forward) {
+        mb_drive((int16_t)(-brake_speed * g_motor_left_scale), 
+                 (int16_t)(-brake_speed * g_motor_right_scale));
+    } else {
+        mb_drive((int16_t)(brake_speed * g_motor_left_scale), 
+                 (int16_t)(brake_speed * g_motor_right_scale));
+    }
+    k_sleep(K_MSEC(30));
+    
     mb_drive(0, 0);
     k_sleep(K_MSEC(100));
-    LOG_INF("Movement complete");
 }
 
 void robot_turn(int32_t angle_deg) {
     if (angle_deg == 0) return;
 
-    float target_angle = fabsf((float)angle_deg);
-    float current_angle = 0.0f;
-    lsm6dsox_gyro_data_t gyro;
-    int64_t last_time = k_uptime_get();
-    int16_t base_speed = TURNSPEED;
+    LOG_INF("Turning %d degrees %s", angle_deg, angle_deg > 0 ? "CW" : "CCW");
 
-    while (current_angle < target_angle) {
+    mb_drive(0, 0);
+    k_sleep(K_MSEC(300));
+
+    const float KP = 4.5f;
+    const float KI = 0.15f;
+    const float KD = 2.5f;
+    const int16_t MAX_SPEED = TURNSPEED;
+    const float GYRO_TOLERANCE = 0.3f;
+    const float GYRO_THRESHOLD = 0.12f;
+    const float INTEGRAL_LIMIT = 15.0f;
+    const float GYRO_FILTER_ALPHA = 0.85f;
+    
+    bool is_clockwise = (angle_deg > 0);
+    
+    float turn_scale = is_clockwise ? g_turn_cw_scale : g_turn_ccw_scale;
+    float stop_ahead = is_clockwise ? g_cw_stop_ahead : g_ccw_stop_ahead;
+    float brake_scale = is_clockwise ? g_cw_brake_scale : g_ccw_brake_scale;
+    
+    float target_angle = fabsf((float)angle_deg);
+    float gyro_angle = 0.0f;
+    float integral = 0.0f;
+    float filtered_dps = 0.0f;
+
+    float error = target_angle - gyro_angle;
+    float last_error = error;
+    int64_t last_time = k_uptime_get();
+
+    int gyro_stable_count = 0;
+    int loop_count = 0;    
+    while (true) {
+        loop_count++;
+        lsm6dsox_gyro_data_t gyro;
+        int64_t now = k_uptime_get();
+        float dt = (now > last_time) ? ((now - last_time) / 1000.0f) : 0.001f;
+        last_time = now;
+        
         if (lsm6dsox_read_gyro(&gyro) == 0) {
-            int64_t now = k_uptime_get();
-            if (now > last_time) {
-                float dt = (now - last_time) / 1000.0f;
-                last_time = now;
-                float dps = lsm6dsox_gyro_to_dps(gyro.z) - g_gyro_bias_z;
-                
-                if (fabsf(dps) > 0.5f) {
-                    current_angle += fabsf(dps * dt);
-                }
+            float raw_dps = lsm6dsox_gyro_to_dps(gyro.z);
+            filtered_dps = GYRO_FILTER_ALPHA * raw_dps + 
+                                        (1.0f - GYRO_FILTER_ALPHA) * filtered_dps;
+            
+            if (fabsf(filtered_dps) > GYRO_THRESHOLD) {
+                gyro_angle += filtered_dps * dt;
             }
         }
-
-        float error = target_angle - current_angle;
-        int16_t current_speed = (int16_t)(error * KP);
         
-        if (current_speed > base_speed) current_speed = base_speed;
-        if (current_speed < MIN_SPEED) current_speed = MIN_SPEED;
+        float abs_gyro_angle = fabsf(gyro_angle);
+        error = target_angle - abs_gyro_angle;
+        
+        if (error <= stop_ahead && fabsf(filtered_dps) < 5.0f) {
+            LOG_INF("Pre-emptive stop at %.2f degrees (stop_ahead=%.2f)", 
+                   (double)gyro_angle, (double)stop_ahead);
+            break;
+        }
+        
+        if (fabsf(error) > 1.0f) {
+            integral += error * dt * 0.05f;
+            if (integral > INTEGRAL_LIMIT) integral = INTEGRAL_LIMIT;
+            if (integral < -INTEGRAL_LIMIT) integral = -INTEGRAL_LIMIT;
+        } else {
+            integral *= 0.9f;
+        }
+        
+        float derivative = (dt > 0.0f) ? ((error - last_error) / dt) : 0.0f;
+        last_error = error;
+        
+        // Check stability
+        if (fabsf(error) <= GYRO_TOLERANCE && fabsf(filtered_dps) < GYRO_THRESHOLD) {
+            gyro_stable_count++;
+            if (gyro_stable_count >= 8) {
+                LOG_INF("Turn complete: %.2f degrees (error: %.2f)", 
+                       (double)gyro_angle, (double)error);
+                break;
+            }
+        } else {
+            gyro_stable_count = 0;
+        }
+        
+        if (abs_gyro_angle > (target_angle + 0.5f)) {
+            LOG_WRN("Overshoot detected: %.2f degrees", (double)-error);
+            break;
+        }
+        
+        if (loop_count > 3000) {
+            LOG_WRN("Turn timeout");
+            break;
+        }
+        
+        // PID control (signed control only cares about magnitude since drive uses sign separately)
+        float control = (KP * error) + (KI * integral) + (KD * derivative);
+        
+        if (fabsf(filtered_dps) > 30.0f && error < 10.0f) {
+            control *= 0.7f;
+        }
+        
+        int16_t speed = (int16_t)fabsf(control);
+        if (speed > MAX_SPEED) speed = MAX_SPEED;
 
-        mb_drive(angle_deg > 0 ? -current_speed : current_speed,
-                 angle_deg > 0 ? current_speed : -current_speed);
+        if (fabsf(error) <= 1.0f) {
+            speed = MIN_SPEED;
+        } else if (fabsf(error) < 8.0f) {
+            float frac = (fabsf(error) - 1.0f) / 7.0f;
+            speed = MIN_SPEED + (int16_t)((MAX_SPEED * 0.5f - MIN_SPEED) * frac);
+        } else {
+            speed = (int16_t)(MAX_SPEED * 0.7f);
+        }
+        
+        speed = (int16_t)(speed * turn_scale);
+        
+        if (is_clockwise) {
+            mb_drive_compensated(-speed, speed);
+        } else {
+            mb_drive_compensated(speed, -speed);
+        }
+        
         k_sleep(K_MSEC(5));
     }
-
-    mb_drive(angle_deg > 0 ? TURNSPEED : -TURNSPEED,
-             angle_deg > 0 ? -TURNSPEED : TURNSPEED);
-    k_sleep(K_MSEC(25));
+    
     mb_drive(0, 0);
-    k_sleep(K_MSEC(100));
+    k_sleep(K_MSEC(30));
+    
+    int16_t brake_speed;
+    if (fabsf(filtered_dps) > 20.0f) {
+        brake_speed = (int16_t)(MAX_SPEED / 2 * brake_scale);
+    } else if (fabsf(filtered_dps) > 10.0f) {
+        brake_speed = (int16_t)(MAX_SPEED / 3 * brake_scale);
+    } else {
+        brake_speed = (int16_t)(MAX_SPEED / 4 * brake_scale);
+    }
+    
+    if (is_clockwise) {
+        mb_drive_compensated(brake_speed, -brake_speed);
+    } else {
+        mb_drive_compensated(-brake_speed, brake_speed);
+    }
+    k_sleep(K_MSEC(25));
+    
+    mb_drive(0, 0);
+    k_sleep(K_MSEC(300));
 }
 
 void robot_turn_to_north(void) {
@@ -339,23 +550,18 @@ void robot_turn_to_north(void) {
         float speed_multiplier = (oscillation_count > 0) ? 0.7f : 1.0f;
         
         if (abs_error > 90.0f) {
-            // Very large error
             turn_speed = TURNSPEED * speed_multiplier;
             turn_duration_ms = 300;
         } else if (abs_error > 45.0f) {
-            // Large error
             turn_speed = TURNSPEED * speed_multiplier;
             turn_duration_ms = 200;
         } else if (abs_error > 20.0f) {
-            // Medium error
             turn_speed = TURNSPEED * 0.8f * speed_multiplier;
             turn_duration_ms = 120;
         } else if (abs_error > 12.0f) {
-            // Small error
             turn_speed = TURNSPEED * 0.6f * speed_multiplier;
             turn_duration_ms = 80;
         } else {
-            // Very small error
             turn_speed = MIN_SPEED;
             turn_duration_ms = 40;
         }

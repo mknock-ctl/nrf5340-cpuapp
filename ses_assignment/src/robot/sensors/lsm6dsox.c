@@ -216,7 +216,9 @@ int lsm6dsox_enable_crash_and_motion(void) {
                    {LSM6DSOX_WAKE_UP_DUR, 0x02},
 
                    // Enable interrupts
-                   {LSM6DSOX_TAP_CFG2, TAP_INTERRUPTS_ENABLE});
+                   {LSM6DSOX_TAP_CFG2, TAP_INTERRUPTS_ENABLE},
+                   
+                   {LSM6DSOX_INT1_CTRL, 0x01});
 
     // Route BOTH wake-up and data ready to INT1
     lsm6dsox_route_int1(INT1_WU | INT1_DRDY_XL, true);

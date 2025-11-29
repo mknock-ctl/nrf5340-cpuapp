@@ -11,32 +11,21 @@
 #define CALIBRATION_RESET false
 #define TAP_TIMEOUT_MS 100
 
-#define TURNSPEED 50
+#define TURNSPEED 60
 #define MIN_SPEED 30
-#define KP 3.0f
 
 #define TICKS_PER_REV 705
 #define WHEEL_DIAMETER_MM 42
 
-#define SPEED_LEFT 30////100
-#define SPEED_RIGHT 30//104
+#define SPEED_LEFT 100////100
+#define SPEED_RIGHT 100//104
 
 #define KP_ALIGN 1.5f
 #define ALIGN_TOLERANCE 5.0f
 
-#define MM_PER_MS_DRIVE (3500.0f / 2000.0f) // calibrated via g_drive_avg_duration_ms
-#define SPEED 100
-
-#define HEADING_OFFSET_DEG 0.0f
-
-#define HEADING_TOLERANCE 10.0f
+#define SPEED (SPEED_LEFT + SPEED_RIGHT) / 2
 #define TURN_TIMEOUT_MS 30000
-#define MAX_TURN_ATTEMPTS 7
-
 #define ROBOT_HEADING_NORTH 0.0f
-#define HEADING_ALPHA 0.3
-#define CRASH_BACKUP_TIME_MS 1000
-#define CRASH_WAIT_MS 250
 
 #define VCAP_MAX 3000
 #define VCAP_MIN 600

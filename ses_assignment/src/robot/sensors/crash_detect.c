@@ -5,7 +5,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
-LOG_MODULE_REGISTER(crash_detect, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(crash_detect, LOG_LEVEL_INF);
 
 extern struct gpio_int_handle int1_handle;
 

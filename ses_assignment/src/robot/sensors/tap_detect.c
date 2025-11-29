@@ -33,22 +33,17 @@ static tap_sensor_t g_tap = {
 static void tap_work_handler(struct k_work *work) {
     LOG_DBG("Tap work handler triggered");
     tap_sensor_t *ts = CONTAINER_OF(work, tap_sensor_t, tap_work);
-    LOG_DBG("1");
     if (!ts->base.active) return;
-    LOG_DBG("2");
     uint8_t tap_src = 0;
     if (lsm6dsox_read_reg(LSM6DSOX_TAP_SRC, &tap_src) != 0) {
         return;
     }
 
-    LOG_DBG("3");
     if (tap_src & TAP_SRC_DOUBLE_TAP_MASK) {
         LOG_INF("Double Tap Detected");
-        LOG_DBG("4");
         k_sem_give(&ts->tap_sem);
         if (ts->user_callback) {
             ts->user_callback();
-            LOG_DBG("5");
         }
     }
 }
