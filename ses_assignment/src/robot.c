@@ -163,10 +163,14 @@ static void mb_drive_compensated(int16_t left_speed, int16_t right_speed) {
     mb_drive(compensated_left, compensated_right);
 }
     
+void robot_move(int32_t distance_mm) {
+    robot_move_with_factor(distance_mm, 4);
+}
 
 //target_ticks = (int32_t)(abs_distance * g_ticks_per_mm);
-void robot_move(int32_t distance_mm) {
+void robot_move_with_factor(int32_t distance_mm, int32_t ramp_factor) {
     if (distance_mm == 0) return;
+    if (!ramp_factor) ramp_factor = 4;
     
     bool forward = (distance_mm > 0);
     int32_t abs_distance = abs(distance_mm);
@@ -191,8 +195,8 @@ void robot_move(int32_t distance_mm) {
     const float KD = 0.05f;      // Derivative causes jerk
     const int16_t MAX_CORRECTION = 40;
     
-    const int32_t RAMP_UP_TICKS = target_ticks / 4;
-    const int32_t RAMP_DOWN_TICKS = target_ticks / 4;
+    const int32_t RAMP_UP_TICKS = target_ticks / ramp_factor;
+    const int32_t RAMP_DOWN_TICKS = target_ticks / ramp_factor;
     const int16_t MIN_RAMP_SPEED = SPEED / 3;
     
     int16_t base_speed = SPEED;
@@ -514,12 +518,11 @@ void robot_turn_to_north(void) {
                 mb_drive(0, 0);
                 break;
             }
-            continue; // Take another reading to confirm
+            continue;
         } else {
             consecutive_good = 0;
         }
 
-        // Detect oscillation
         if (last_error != 0.0f && 
             ((last_error > 0 && error < 0) || (last_error < 0 && error > 0)) &&
             abs_error > tolerance) {
@@ -531,7 +534,6 @@ void robot_turn_to_north(void) {
         }
         last_error = error;
 
-        // If oscillating too much, take a longer reading to get better average
         if (oscillation_count >= 2) {
             LOG_INF("High oscillation detected, waiting for better reading...");
             k_sleep(K_MSEC(200));
@@ -546,7 +548,6 @@ void robot_turn_to_north(void) {
         int16_t turn_speed;
         int32_t turn_duration_ms;
         
-        // If oscillating, use gentler movements
         float speed_multiplier = (oscillation_count > 0) ? 0.7f : 1.0f;
         
         if (abs_error > 90.0f) {
@@ -569,7 +570,7 @@ void robot_turn_to_north(void) {
         bool current_turn_clockwise = (error < 0);
         
         if (current_turn_clockwise) {
-            mb_drive(turn_speed, -turn_speed);  // Turn clockwise
+            mb_drive(turn_speed, -turn_speed);
         } else {
             mb_drive(-turn_speed, turn_speed);
         }
@@ -593,7 +594,7 @@ void robot_turn_to_north(void) {
     }
 
     mb_drive(0, 0);
-    k_sleep(K_MSEC(300)); // Final settling time
+    k_sleep(K_MSEC(300));
 }
 
 void robot_set_status(robot_status_t status) {

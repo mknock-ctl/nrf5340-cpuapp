@@ -97,17 +97,16 @@ int lsm6dsox_route_int1(uint8_t bit_mask, bool enable) {
 }
 
 int lsm6dsox_reset_embedded_functions(void) {
-    // Disable the master interrupt engine first to stop any firing
-    lsm6dsox_write_reg(LSM6DSOX_TAP_CFG2, 0x00);
-    
-    // Clear all other related configuration registers
     lsm6dsox_write_reg(LSM6DSOX_TAP_CFG0, 0x00);
     lsm6dsox_write_reg(LSM6DSOX_TAP_CFG1, 0x00);
+    lsm6dsox_write_reg(LSM6DSOX_TAP_CFG2, 0x00);
     lsm6dsox_write_reg(LSM6DSOX_TAP_THS_6D, 0x00);
     lsm6dsox_write_reg(LSM6DSOX_INT_DUR2, 0x00);
     lsm6dsox_write_reg(LSM6DSOX_WAKE_UP_THS, 0x00);
     lsm6dsox_write_reg(LSM6DSOX_WAKE_UP_DUR, 0x00);
     lsm6dsox_write_reg(LSM6DSOX_MD1_CFG, 0x00); // Disconnect INT1 routing
+
+    lsm6dsox_write_reg(LSM6DSOX_INT1_CTRL, 0x00);
 
     // Clear any pending interrupts
     lsm6dsox_clear_interrupts();

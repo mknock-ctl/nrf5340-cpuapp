@@ -64,7 +64,7 @@
 
 // WAKE_UP_THS
 #define WAKE_UP_THS_SINGLE_DOUBLE_TAP (1 << 7)
-#define CRASH_THRESHOLD_WAKEUP 0x19 // 0x19 on table
+#define CRASH_THRESHOLD_WAKEUP 0x21 // 0x19 on table
 
 // Gyro values
 #define GYRO_CFG_500DPS_416HZ 0x64

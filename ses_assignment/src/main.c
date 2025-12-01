@@ -158,8 +158,7 @@ static void wait_for_double_tap(void) {
     LOG_INF("Double tap detected.");
 }
 
-static void follow_predefined_path(float scale) {    
-    robot_turn_to_north();
+static void follow_predefined_path(float scale) {
     robot_move(2000 * scale);
     robot_turn(90); // 90 degrees left
     robot_move(2000 * scale);
@@ -171,6 +170,15 @@ static void follow_predefined_path(float scale) {
     robot_move(-2000 * scale);
     robot_turn(90);
     robot_move(4000 * scale);        
+}
+
+static void first_assign(void) {
+    robot_turn_to_north();
+    robot_move(1000);
+}
+
+static void third_assign(void) {
+    robot_move(10000);
 }
 
 int main(void) {
@@ -189,17 +197,35 @@ int main(void) {
     for (;;) {
         update_battery_led();
 
-        k_sleep(K_MSEC(200));
-
         wait_for_double_tap();
 
-        for (int i = 0; i < 3; i++) {
-            mb_led_toggle(MB_LED_G);
-            k_sleep(K_MSEC(400));
-        }
+        k_sleep(K_MSEC(200));
+
         robot_set_imu_mode(IMU_MODE_CRASH);
         robot_set_status(STATUS_OK);
-        follow_predefined_path(0.2f);
+
+        robot_turn_to_north();
+        k_sleep(K_MSEC(200));
+        robot_move(500);
+
+        wait_for_double_tap();
+        k_sleep(K_MSEC(200));
+        robot_set_imu_mode(IMU_MODE_CRASH);
+        robot_set_status(STATUS_OK);
+        for (int i = 0; i < 6; i++) {
+            robot_move(400);
+            k_sleep(K_MSEC(600));
+            robot_turn(60);
+            k_sleep(K_MSEC(600));
+        }
+
+        wait_for_double_tap();
+        k_sleep(K_MSEC(200));
+
+        robot_set_imu_mode(IMU_MODE_CRASH);
+        robot_set_status(STATUS_OK);
+        int32_t dist = 1000000;
+        robot_move_with_factor(dist, (dist * 0.995));
     }
 
     UNREACHABLE();
