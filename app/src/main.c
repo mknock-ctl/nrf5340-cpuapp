@@ -201,7 +201,7 @@ int main(void) {
 
         k_sleep(K_MSEC(200));
 
-        robot_set_imu_mode(IMU_MODE_CRASH);
+        /*robot_set_imu_mode(IMU_MODE_CRASH);
         robot_set_status(STATUS_OK);
 
         robot_turn_to_north();
@@ -220,7 +220,7 @@ int main(void) {
         }
 
         wait_for_double_tap();
-        k_sleep(K_MSEC(200));
+        k_sleep(K_MSEC(200));*/
 
         robot_set_imu_mode(IMU_MODE_CRASH);
         robot_set_status(STATUS_OK);
